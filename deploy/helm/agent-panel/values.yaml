@@ -1,0 +1,86 @@
+# Default values for agent-panel Helm chart
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: agent-panel
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: nginx
+  host: agent-panel.example.com
+  tls:
+    enabled: true
+    secretName: agent-panel-tls
+  certManager:
+    enabled: false
+    clusterIssuer: letsencrypt-prod
+
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 250m
+  limits:
+    memory: 1Gi
+    cpu: 1000m
+
+panel:
+  runtimeProvider: k8s
+  inferenceUrl: http://agent-panel.agentpanel.svc.cluster.local/v1
+  k8sInCluster: true
+  k8sExposeViaIngress: false
+  k8sIngressHost: agentpanel.local
+  appsNamespace: agentpanel-apps
+
+database:
+  external: false
+  host: postgres
+  port: 5432
+  name: agentpanel
+  user: agentpanel
+  password: agentpanel
+
+storage:
+  external: false
+  endpoint: http://minio:9000
+  bucket: agent-panel
+  accessKey: minioadmin
+  secretKey: minioadmin
+
+secrets:
+  jwtSecret: change-me-in-production-32-characters!!
+  appSecretKey: "0123456789abcdef0123456789abcdef"
+
+postgres:
+  enabled: true
+  image: pgvector/pgvector:pg16
+  storage: 5Gi
+
+minio:
+  enabled: true
+  image: minio/minio:latest
+  storage: 10Gi
+
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: agent-panel
+
+namespace:
+  create: true
+  name: agentpanel
+
+appsNamespace:
+  create: true

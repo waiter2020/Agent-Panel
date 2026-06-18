@@ -1,0 +1,12 @@
+apiVersion: v2
+name: agent-panel
+description: Agent Panel - multi-agent orchestration control plane
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - agent
+  - ai
+  - orchestration
+maintainers:
+  - name: Agent Panel Team

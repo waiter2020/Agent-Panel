@@ -1,0 +1,35 @@
+{{- if and .Values.rbac.create .Values.appsNamespace.create .Values.panel.appsNamespace }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "agent-panel.fullname" . }}-apps-manager
+  namespace: {{ .Values.panel.appsNamespace }}
+  labels:
+    {{- include "agent-panel.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "pods", "pods/log", "persistentvolumeclaims", "secrets", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "agent-panel.fullname" . }}-apps-manager
+  namespace: {{ .Values.panel.appsNamespace }}
+  labels:
+    {{- include "agent-panel.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ include "agent-panel.namespace" . }}
+roleRef:
+  kind: Role
+  name: {{ include "agent-panel.fullname" . }}-apps-manager
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

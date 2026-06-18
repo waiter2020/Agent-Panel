@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agent-panel.fullname" . }}-config
+  namespace: {{ include "agent-panel.namespace" . }}
+  labels:
+    {{- include "agent-panel.labels" . | nindent 4 }}
+data:
+  AGENT_RUNTIME_PROVIDER: {{ .Values.panel.runtimeProvider | quote }}
+  DB_HOST: {{ .Values.database.host | quote }}
+  DB_PORT: {{ .Values.database.port | quote }}
+  DB_NAME: {{ .Values.database.name | quote }}
+  STORAGE_ENDPOINT: {{ .Values.storage.endpoint | quote }}
+  STORAGE_BUCKET: {{ .Values.storage.bucket | quote }}
+  K8S_IN_CLUSTER: {{ .Values.panel.k8sInCluster | quote }}
+  PANEL_INFERENCE_URL: {{ .Values.panel.inferenceUrl | quote }}
+  K8S_EXPOSE_VIA_INGRESS: {{ .Values.panel.k8sExposeViaIngress | quote }}
+  K8S_INGRESS_HOST: {{ .Values.panel.k8sIngressHost | quote }}
+  K8S_APPS_NAMESPACE: {{ .Values.panel.appsNamespace | quote }}

@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-panel
+  namespace: agentpanel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-panel
+  template:
+    metadata:
+      labels:
+        app: agent-panel
+    spec:
+      serviceAccountName: agent-panel
+      containers:
+        - name: panel
+          image: agent-panel:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: agent-panel-config
+            - secretRef:
+                name: agent-panel-secret
+          volumeMounts:
+            - name: panel-logs
+              mountPath: /var/log/agent-panel
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+      volumes:
+        - name: panel-logs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-panel
+  namespace: agentpanel
+spec:
+  selector:
+    app: agent-panel
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP

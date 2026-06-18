@@ -1,0 +1,9 @@
+{{- if .Values.appsNamespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.panel.appsNamespace }}
+  labels:
+    {{- include "agent-panel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-apps
+{{- end }}

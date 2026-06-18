@@ -1,0 +1,16 @@
+logging:
+  file:
+    path: ${LOG_PATH:/var/log/agent-panel}
+  level:
+    com.agentpanel: ${LOG_LEVEL:INFO}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true

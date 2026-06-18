@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkagent_panel_frontend=self.webpackChunkagent_panel_frontend||[]).push([[48],{83048:function(o,n,t){t.r(n),t.d(n,{default:function(){return E}});var f=t(75271),u=t(74126),e=t(52676);function E(){var a=(0,u.useOutletContext)();return(0,e.jsx)(u.Outlet,{context:a})}}}]);

@@ -1,0 +1,116 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: agent-panel
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:agentpanel}
+    username: ${DB_USER:agentpanel}
+    password: ${DB_PASSWORD:agentpanel}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  ai:
+    openai:
+      enabled: ${SPRING_AI_OPENAI_ENABLED:false}
+      api-key: ${OPENAI_API_KEY:}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      embedding:
+        options:
+          model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+    ollama:
+      enabled: ${SPRING_AI_OLLAMA_ENABLED:false}
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      embedding:
+        options:
+          model: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
+
+agent:
+  registry:
+    cache-ttl: 10m
+    request-timeout: 5s
+    allowed-hosts:
+      - ghcr.io
+      - registry-1.docker.io
+      - docker.io
+      - index.docker.io
+  panel:
+    inference-url: ${PANEL_INFERENCE_URL:http://agent-panel:8080/v1}
+    api-key-rotation-grace-days: ${API_KEY_ROTATION_GRACE_DAYS:7}
+    memory:
+      embedding-dimensions: ${MEMORY_EMBEDDING_DIM:1536}
+  runtime:
+    provider: ${AGENT_RUNTIME_PROVIDER:docker}
+    terminal-enabled: ${AGENT_TERMINAL_ENABLED:true}
+    docker:
+      host: ${DOCKER_HOST:unix:///var/run/docker.sock}
+      data-root: ${AGENT_DATA_ROOT:/data/apps}
+      host-data-root: ${AGENT_HOST_DATA_ROOT:}
+      network: agentpanel-net
+      access-host: ${AGENT_ACCESS_HOST:localhost}
+      response-timeout: ${AGENT_DOCKER_RESPONSE_TIMEOUT:300s}
+      volume-uid: ${AGENT_VOLUME_UID:1000}
+      volume-gid: ${AGENT_VOLUME_GID:1000}
+      data-volume-name: ${AGENT_DATA_VOLUME_NAME:}
+    k8s:
+      namespace: agentpanel-apps
+      in-cluster: ${K8S_IN_CLUSTER:false}
+      access-host: ${K8S_ACCESS_HOST:localhost}
+      expose-via-ingress: ${K8S_EXPOSE_VIA_INGRESS:false}
+      ingress-host: ${K8S_INGRESS_HOST:agentpanel.local}
+      ingress-class: ${K8S_INGRESS_CLASS:nginx}
+      ingress-tls-secret: ${K8S_INGRESS_TLS_SECRET:}
+
+storage:
+  type: s3
+  endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+  region: ${STORAGE_REGION:us-east-1}
+  access-key: ${STORAGE_ACCESS_KEY:minioadmin}
+  secret-key: ${STORAGE_SECRET_KEY:minioadmin}
+  bucket: ${STORAGE_BUCKET:agent-panel}
+  path-style-access: true
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:agent-panel-dev-secret-key-change-in-production-32chars}
+    access-ttl: 30m
+    refresh-ttl: 7d
+  app-secret-key: ${APP_SECRET_KEY:0123456789abcdef0123456789abcdef}
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  file:
+    path: ${LOG_PATH:./logs}
+  logback:
+    rollingpolicy:
+      max-file-size: ${LOG_MAX_FILE_SIZE:50MB}
+      max-history: ${LOG_MAX_HISTORY:30}
+      total-size-cap: ${LOG_TOTAL_SIZE_CAP:3GB}
+  level:
+    root: INFO
+    com.agentpanel: ${LOG_LEVEL:INFO}
+    org.springframework.web: WARN
+    org.hibernate: WARN
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized

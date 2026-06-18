@@ -1,0 +1,77 @@
+.dashboard-stats {
+  .stat-card {
+    border-radius: 12px;
+    overflow: hidden;
+    transition: box-shadow 0.3s, transform 0.3s;
+
+    &:hover {
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+      transform: translateY(-2px);
+    }
+
+    .ant-statistic-title {
+      color: #8c8c8c;
+      font-size: 14px;
+    }
+
+    .ant-statistic-content {
+      font-size: 32px;
+      font-weight: 600;
+    }
+  }
+
+  .stat-icon {
+    font-size: 40px;
+    opacity: 0.85;
+  }
+}
+
+.quick-links {
+  margin-top: 24px;
+
+  .quick-link-card {
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s;
+    height: 100%;
+
+    &:hover {
+      border-color: #667eea;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+      transform: translateY(-2px);
+    }
+
+    .quick-link-icon {
+      font-size: 28px;
+      margin-bottom: 12px;
+    }
+
+    .quick-link-title {
+      font-size: 16px;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .quick-link-desc {
+      color: #8c8c8c;
+      font-size: 13px;
+    }
+  }
+}
+
+.welcome-card {
+  border-radius: 12px;
+  margin-top: 24px;
+
+  .welcome-title {
+    font-size: 18px;
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+
+  .welcome-desc {
+    color: #595959;
+    line-height: 1.8;
+    margin-bottom: 0;
+  }
+}

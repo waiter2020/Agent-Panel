@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-panel-config
+  namespace: agentpanel
+data:
+  AGENT_RUNTIME_PROVIDER: k8s
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_NAME: agentpanel
+  STORAGE_ENDPOINT: http://minio:9000
+  STORAGE_BUCKET: agent-panel
+  K8S_IN_CLUSTER: "true"
+  PANEL_INFERENCE_URL: http://agent-panel.agentpanel.svc.cluster.local/v1
+  K8S_EXPOSE_VIA_INGRESS: "false"
+  K8S_INGRESS_HOST: agentpanel.local
+  LOG_PATH: /var/log/agent-panel
+  LOG_LEVEL: INFO
+  SPRING_PROFILES_ACTIVE: prod
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: agent-panel-secret
+  namespace: agentpanel
+type: Opaque
+stringData:
+  DB_USER: agentpanel
+  DB_PASSWORD: agentpanel
+  JWT_SECRET: change-me-in-production-32-characters!!
+  APP_SECRET_KEY: 0123456789abcdef0123456789abcdef
+  STORAGE_ACCESS_KEY: minioadmin
+  STORAGE_SECRET_KEY: minioadmin
