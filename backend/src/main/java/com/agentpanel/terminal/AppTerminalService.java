@@ -1,7 +1,6 @@
 package com.agentpanel.terminal;
 
 import com.agentpanel.application.entity.Application;
-import com.agentpanel.application.repository.ApplicationRepository;
 import com.agentpanel.application.service.ApplicationService;
 import com.agentpanel.auth.SecurityUtils;
 import com.agentpanel.common.BusinessException;
@@ -18,7 +17,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AppTerminalService {
 
-    private final ApplicationRepository applicationRepository;
     private final ApplicationService applicationService;
     private final RuntimeProviderFactory runtimeProviderFactory;
     private final AgentRuntimeProperties runtimeProperties;
@@ -28,8 +26,7 @@ public class AppTerminalService {
         if (!runtimeProperties.isTerminalEnabled()) {
             throw new BusinessException("终端功能已禁用");
         }
-        Application app = applicationRepository.findByIdAndDeletedFalse(appId)
-                .orElseThrow(() -> new BusinessException("应用不存在"));
+        Application app = applicationService.requireApplication(appId);
         if (app.getRuntimeRef() == null) {
             throw new BusinessException("应用尚未部署，无法打开终端");
         }

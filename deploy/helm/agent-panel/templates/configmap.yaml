@@ -13,7 +13,12 @@ data:
   STORAGE_ENDPOINT: {{ .Values.storage.endpoint | quote }}
   STORAGE_BUCKET: {{ .Values.storage.bucket | quote }}
   K8S_IN_CLUSTER: {{ .Values.panel.k8sInCluster | quote }}
+  K8S_ACCESS_HOST: {{ .Values.panel.k8sAccessHost | quote }}
   PANEL_INFERENCE_URL: {{ .Values.panel.inferenceUrl | quote }}
   K8S_EXPOSE_VIA_INGRESS: {{ .Values.panel.k8sExposeViaIngress | quote }}
   K8S_INGRESS_HOST: {{ .Values.panel.k8sIngressHost | quote }}
+  K8S_INGRESS_CLASS: {{ default .Values.ingress.className .Values.panel.k8sIngressClass | quote }}
+  K8S_INGRESS_TLS_SECRET: {{ .Values.panel.k8sIngressTlsSecret | quote }}
   K8S_APPS_NAMESPACE: {{ .Values.panel.appsNamespace | quote }}
+  K8S_STORAGE_CLASS: {{ .Values.panel.k8sStorageClass | quote }}
+  K8S_VOLUME_STORAGE_SIZE: {{ .Values.panel.k8sVolumeStorageSize | quote }}

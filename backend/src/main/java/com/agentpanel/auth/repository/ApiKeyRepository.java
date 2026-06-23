@@ -9,4 +9,6 @@ public interface ApiKeyRepository extends JpaRepository<ApiKey, Long> {
     List<ApiKey> findByEnabledTrue();
 
     List<ApiKey> findAllByOrderByCreatedAtDesc();
+
+    List<ApiKey> findByTenantIdOrderByCreatedAtDesc(Long tenantId);
 }

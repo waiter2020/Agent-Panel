@@ -42,7 +42,7 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
                     var authorities = key.getScopes().stream()
                             .map(SimpleGrantedAuthority::new)
                             .collect(Collectors.toList());
-                    var principal = new AuthPrincipal(0L, "api-key:" + key.getName(), null);
+                    var principal = new AuthPrincipal(0L, "api-key:" + key.getName(), key.getTenantId());
                     var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
                     SecurityContextHolder.getContext().setAuthentication(auth);
                 }

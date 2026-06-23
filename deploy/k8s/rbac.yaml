@@ -33,3 +33,28 @@ roleRef:
   kind: Role
   name: agent-panel-apps-manager
   apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agent-panel-metrics-reader
+rules:
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["nodes/stats", "nodes/proxy"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agent-panel-metrics-reader
+subjects:
+  - kind: ServiceAccount
+    name: agent-panel
+    namespace: agentpanel
+roleRef:
+  kind: ClusterRole
+  name: agent-panel-metrics-reader
+  apiGroup: rbac.authorization.k8s.io

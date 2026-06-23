@@ -26,6 +26,9 @@ public class SharedMemory {
     @Column(name = "application_id")
     private Long applicationId;
 
+    @Column(name = "tenant_id", nullable = false)
+    private Long tenantId = 1L;
+
     @Column(nullable = false, length = 16)
     private String scope = "global";
 

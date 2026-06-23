@@ -52,6 +52,8 @@ export default defineConfig({
       access: 'canAccessApp',
       routes: [
         { path: '/app/list', name: '应用列表', component: './app/list', access: 'canAccessApp' },
+        { path: '/app/kanban', name: '运维看板', component: './app/kanban', access: 'canAccessApp' },
+        { path: '/app/ports', name: '端口全景', component: './app/ports', access: 'canAccessApp' },
         { path: '/app/topology', name: '协同拓扑', component: './app/topology', access: 'canViewTopology' },
         { path: '/app/memory', name: '共享记忆', component: './app/memory', access: 'canViewMemory' },
         { path: '/app/detail/:id', name: '应用详情', hideInMenu: true, component: './app/detail', access: 'canAccessApp' },

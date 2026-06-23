@@ -5,5 +5,5 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties({StorageProperties.class, JwtProperties.class, AgentRuntimeProperties.class, AgentPanelProperties.class, MemoryProperties.class, RegistryProperties.class})
+@EnableConfigurationProperties({StorageProperties.class, JwtProperties.class, AgentRuntimeProperties.class, AgentPanelProperties.class, MemoryProperties.class, RegistryProperties.class, OpenClawProperties.class})
 public class AppConfig {}

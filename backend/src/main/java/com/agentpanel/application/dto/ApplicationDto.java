@@ -11,6 +11,8 @@ public class ApplicationDto {
     private String name;
     private Long templateId;
     private String templateName;
+    private String templateCode;
+    private Map<String, Object> managementSchema;
     private Long ownerId;
     private String image;
     private String tag;

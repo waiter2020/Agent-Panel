@@ -1,9 +1,19 @@
 import { PageContainer } from '@ant-design/pro-components';
 import { Button, Card, Input, Select, Space, message } from 'antd';
+import { Link, history, useSearchParams } from '@umijs/max';
 import { listProviders } from '@/services/ai';
 import { useEffect, useRef, useState } from 'react';
 
+function syncPlaygroundUrl(providerId?: number, model?: string) {
+  const params = new URLSearchParams();
+  if (providerId) params.set('provider', String(providerId));
+  if (model) params.set('model', model);
+  const qs = params.toString();
+  history.replace(qs ? `/ai/playground?${qs}` : '/ai/playground');
+}
+
 export default () => {
+  const [searchParams] = useSearchParams();
   const [providers, setProviders] = useState<any[]>([]);
   const [providerId, setProviderId] = useState<number>();
   const [model, setModel] = useState('gpt-4o-mini');
@@ -15,9 +25,17 @@ export default () => {
   useEffect(() => {
     listProviders().then((data) => {
       setProviders(data);
-      if (data[0]) setProviderId(data[0].id);
+      const providerParam = searchParams.get('provider');
+      const modelParam = searchParams.get('model');
+      if (providerParam) {
+        const matched = data.find((p: any) => String(p.id) === providerParam || p.code === providerParam);
+        if (matched) setProviderId(matched.id);
+      } else if (data[0]) {
+        setProviderId(data[0].id);
+      }
+      if (modelParam) setModel(modelParam);
     });
-  }, []);
+  }, [searchParams]);
 
   const send = async () => {
     if (!providerId || !input.trim()) return;
@@ -48,12 +66,31 @@ export default () => {
   };
 
   return (
-    <PageContainer title="对话调试">
+    <PageContainer
+      title="对话调试"
+      extra={<Link to="/ai/models">返回模型配置</Link>}
+    >
       <Card>
         <Space style={{ marginBottom: 16 }}>
-          <Select style={{ width: 200 }} placeholder="选择 Provider" value={providerId} onChange={setProviderId}
-            options={providers.map((p) => ({ label: p.name, value: p.id }))} />
-          <Input style={{ width: 200 }} value={model} onChange={(e) => setModel(e.target.value)} placeholder="模型名称" />
+          <Select
+            style={{ width: 200 }}
+            placeholder="选择 Provider"
+            value={providerId}
+            onChange={(v) => {
+              setProviderId(v);
+              syncPlaygroundUrl(v, model);
+            }}
+            options={providers.map((p) => ({ label: p.name, value: p.id }))}
+          />
+          <Input
+            style={{ width: 200 }}
+            value={model}
+            onChange={(e) => {
+              setModel(e.target.value);
+              syncPlaygroundUrl(providerId, e.target.value);
+            }}
+            placeholder="模型名称"
+          />
         </Space>
         <div style={{ minHeight: 300, border: '1px solid #eee', padding: 12, marginBottom: 12 }}>
           {messages.map((m, i) => (

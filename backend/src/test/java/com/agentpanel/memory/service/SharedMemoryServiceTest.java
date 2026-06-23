@@ -72,7 +72,7 @@ class SharedMemoryServiceTest {
         memory.setKey("doc");
         memory.setContent("vector database guide");
         memory.setScope("global");
-        when(sharedMemoryRepository.searchByKeyword(eq("vector"), any(Pageable.class)))
+        when(sharedMemoryRepository.searchByKeywordAndTenantId(eq("vector"), eq(1L), any(Pageable.class)))
                 .thenReturn(List.of(memory));
 
         List<SharedMemoryDto> results = sharedMemoryService.search("vector", null, null, 10);
@@ -87,11 +87,11 @@ class SharedMemoryServiceTest {
         when(embeddingModelProvider.getIfAvailable()).thenReturn(embeddingModel);
         when(embeddingModel.embed("query")).thenReturn(new float[1536]);
         when(memoryProperties.getEmbeddingDimensions()).thenReturn(1536);
-        when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(), any(), anyInt()))
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object[].class)))
                 .thenReturn(List.of());
 
         sharedMemoryService.search("query", null, null, 5);
 
-        verify(jdbcTemplate).query(contains("embedding <=>"), any(RowMapper.class), any(), any(), eq(5));
+        verify(jdbcTemplate).query(contains("embedding <=>"), any(RowMapper.class), any(Object[].class));
     }
 }

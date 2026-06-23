@@ -1,9 +1,7 @@
-import { Button, Card, Form, Input, Space, Switch, Table, message } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { Button, Card, Form, Input, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { updateApp } from '@/services/app';
-
-type EnvItem = { key: string; value: string; secret: boolean };
+import CustomEnvTable, { EnvItem, hasDuplicateEnvKeys } from './CustomEnvTable';
 
 type Props = {
   appId: number;
@@ -36,6 +34,10 @@ export default function EnvConfigPanel({ appId, envSchema, env, onSaved }: Props
   }, [env, envSchema, form, schemaKeys]);
 
   const handleSave = async () => {
+    if (hasDuplicateEnvKeys(customEnv)) {
+      message.error('自定义环境变量存在重复 Key');
+      return;
+    }
     const schemaValues = await form.validateFields();
     const schemaEnv = (envSchema || []).map((schema) => {
       const raw = String(schemaValues[schema.key] ?? '');
@@ -80,87 +82,7 @@ export default function EnvConfigPanel({ appId, envSchema, env, onSaved }: Props
       </Form>
 
       <div style={{ marginTop: 8, marginBottom: 8, fontWeight: 600 }}>自定义环境变量</div>
-      <Table
-        size="small"
-        pagination={false}
-        rowKey={(record, index) => `${record.key}-${index}`}
-        dataSource={customEnv}
-        columns={[
-          {
-            title: 'Key',
-            dataIndex: 'key',
-            render: (_, record, index) => (
-              <Input
-                value={record.key}
-                placeholder="MY_ENV_KEY"
-                onChange={(e) => {
-                  const next = [...customEnv];
-                  next[index] = { ...next[index], key: e.target.value };
-                  setCustomEnv(next);
-                }}
-              />
-            ),
-          },
-          {
-            title: 'Value',
-            dataIndex: 'value',
-            render: (_, record, index) => (
-              record.secret ? (
-                <Input.Password
-                  value={record.value}
-                  placeholder="留空表示不修改"
-                  onChange={(e) => {
-                    const next = [...customEnv];
-                    next[index] = { ...next[index], value: e.target.value };
-                    setCustomEnv(next);
-                  }}
-                />
-              ) : (
-                <Input
-                  value={record.value}
-                  onChange={(e) => {
-                    const next = [...customEnv];
-                    next[index] = { ...next[index], value: e.target.value };
-                    setCustomEnv(next);
-                  }}
-                />
-              )
-            ),
-          },
-          {
-            title: 'Secret',
-            dataIndex: 'secret',
-            width: 90,
-            render: (_, record, index) => (
-              <Switch
-                checked={record.secret}
-                onChange={(checked) => {
-                  const next = [...customEnv];
-                  next[index] = { ...next[index], secret: checked };
-                  setCustomEnv(next);
-                }}
-              />
-            ),
-          },
-          {
-            title: '操作',
-            width: 80,
-            render: (_, __, index) => (
-              <a style={{ color: 'red' }} onClick={() => setCustomEnv(customEnv.filter((_, i) => i !== index))}>
-                删除
-              </a>
-            ),
-          },
-        ]}
-      />
-      <Button
-        type="dashed"
-        icon={<PlusOutlined />}
-        style={{ marginTop: 12 }}
-        onClick={() => setCustomEnv([...customEnv, { key: '', value: '', secret: false }])}
-      >
-        添加变量
-      </Button>
+      <CustomEnvTable value={customEnv} onChange={setCustomEnv} />
     </Card>
   );
 }

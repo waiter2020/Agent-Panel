@@ -2,7 +2,7 @@ import { getSseTicket } from '@/services/auth';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import { Button, Space, message } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import '@xterm/xterm/css/xterm.css';
 
 type Props = {
@@ -24,13 +24,46 @@ function decodeBase64(data: string): Uint8Array {
   return bytes;
 }
 
+function sendResize(ws: WebSocket, term: Terminal) {
+  if (ws.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  ws.send(JSON.stringify({
+    type: 'resize',
+    cols: term.cols,
+    rows: term.rows,
+  }));
+}
+
 export default function AppTerminal({ appId, disabled }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const connectedRef = useRef(false);
+  const resizeTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
+
+  const scheduleResize = useCallback(() => {
+    const term = termRef.current;
+    const ws = wsRef.current;
+    const fit = fitRef.current;
+    if (!term || !fit || !connectedRef.current || !ws) {
+      return;
+    }
+    fit.fit();
+    if (resizeTimerRef.current) {
+      clearTimeout(resizeTimerRef.current);
+    }
+    resizeTimerRef.current = setTimeout(() => {
+      sendResize(ws, term);
+    }, 150);
+  }, []);
+
+  useEffect(() => {
+    connectedRef.current = connected;
+  }, [connected]);
 
   useEffect(() => {
     const term = new Terminal({
@@ -47,16 +80,24 @@ export default function AppTerminal({ appId, disabled }: Props) {
       term.open(containerRef.current);
       fitAddon.fit();
     }
-    const onResize = () => fitAddon.fit();
-    window.addEventListener('resize', onResize);
+    const onWindowResize = () => scheduleResize();
+    window.addEventListener('resize', onWindowResize);
+    const observer = new ResizeObserver(() => scheduleResize());
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
     return () => {
-      window.removeEventListener('resize', onResize);
+      window.removeEventListener('resize', onWindowResize);
+      observer.disconnect();
+      if (resizeTimerRef.current) {
+        clearTimeout(resizeTimerRef.current);
+      }
       wsRef.current?.close();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
     };
-  }, []);
+  }, [scheduleResize]);
 
   useEffect(() => {
     const term = termRef.current;
@@ -84,7 +125,7 @@ export default function AppTerminal({ appId, disabled }: Props) {
     }
     setConnecting(true);
     try {
-      const token = await getSseTicket();
+      const { token } = await getSseTicket();
       const ws = new WebSocket(`${wsBaseUrl()}/api/apps/${appId}/terminal/ws?token=${encodeURIComponent(token)}`);
       wsRef.current = ws;
       ws.onopen = () => {
@@ -94,11 +135,7 @@ export default function AppTerminal({ appId, disabled }: Props) {
         const fit = fitRef.current;
         if (term && fit) {
           fit.fit();
-          ws.send(JSON.stringify({
-            type: 'resize',
-            cols: term.cols,
-            rows: term.rows,
-          }));
+          sendResize(ws, term);
           term.focus();
         }
       };

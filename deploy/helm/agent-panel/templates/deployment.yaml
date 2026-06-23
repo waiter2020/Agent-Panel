@@ -22,13 +22,34 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.service.targetPort }}
+              name: http
+            - containerPort: {{ .Values.service.managementPort }}
+              name: management
           envFrom:
             - configMapRef:
                 name: {{ include "agent-panel.fullname" . }}-config
             - secretRef:
                 name: {{ include "agent-panel.fullname" . }}-secret
+          volumeMounts:
+            - name: panel-logs
+              mountPath: /var/log/agent-panel
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: {{ .Values.service.managementPort }}
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: {{ .Values.service.managementPort }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: panel-logs
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

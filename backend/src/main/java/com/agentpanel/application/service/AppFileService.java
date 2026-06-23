@@ -92,6 +92,78 @@ public class AppFileService {
         }
     }
 
+    public String readText(Long appId, String volume, String relativePath) {
+        byte[] content = download(appId, volume, relativePath);
+        return new String(content, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    public void writeText(Long appId, String volume, String relativePath, String content) {
+        if (isK8s(appId)) {
+            k8sVolumeFileService.writeText(
+                    applicationService.runtimeRef(appId),
+                    applicationService.resolveVolumeContainerPath(appId, volume),
+                    relativePath,
+                    content
+            );
+            return;
+        }
+        Path target = resolveSafeHostPath(appId, volume, relativePath);
+        try {
+            Files.createDirectories(target.getParent());
+            Files.writeString(target, content == null ? "" : content, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            volumePermissionService.prepareVolumeDirectory(applicationService.resolveVolumeHostPath(appId, volume));
+        } catch (IOException e) {
+            throw new BusinessException("写入失败: " + e.getMessage());
+        }
+    }
+
+    public void mkdir(Long appId, String volume, String relativePath) {
+        if (isK8s(appId)) {
+            k8sVolumeFileService.mkdir(
+                    applicationService.runtimeRef(appId),
+                    applicationService.resolveVolumeContainerPath(appId, volume),
+                    relativePath
+            );
+            return;
+        }
+        Path target = resolveSafeHostPath(appId, volume, relativePath);
+        try {
+            Files.createDirectories(target);
+            volumePermissionService.prepareVolumeDirectory(applicationService.resolveVolumeHostPath(appId, volume));
+        } catch (IOException e) {
+            throw new BusinessException("创建目录失败: " + e.getMessage());
+        }
+    }
+
+    public void rename(Long appId, String volume, String relativePath, String newName) {
+        if (newName == null || newName.isBlank() || newName.contains("/") || newName.contains("\\")) {
+            throw new BusinessException("新名称无效");
+        }
+        if (isK8s(appId)) {
+            k8sVolumeFileService.rename(
+                    applicationService.runtimeRef(appId),
+                    applicationService.resolveVolumeContainerPath(appId, volume),
+                    relativePath,
+                    newName
+            );
+            return;
+        }
+        Path source = resolveSafeHostPath(appId, volume, relativePath);
+        if (!Files.exists(source)) {
+            throw new BusinessException("文件不存在");
+        }
+        Path target = source.getParent().resolve(newName).normalize().toAbsolutePath();
+        Path base = applicationService.resolveVolumeHostPath(appId, volume).normalize().toAbsolutePath();
+        if (!target.startsWith(base)) {
+            throw new BusinessException("非法路径");
+        }
+        try {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new BusinessException("重命名失败: " + e.getMessage());
+        }
+    }
+
     public void delete(Long appId, String volume, String relativePath) {
         if (isK8s(appId)) {
             k8sVolumeFileService.delete(

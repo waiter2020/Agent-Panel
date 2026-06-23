@@ -38,13 +38,21 @@ public class ApiKeyManagementService {
     private final AgentPanelProperties panelProperties;
 
     public List<ApiKeyDto> list() {
-        return apiKeyRepository.findAllByOrderByCreatedAtDesc().stream()
+        List<ApiKey> keys = SecurityUtils.isSuperAdmin()
+                ? apiKeyRepository.findAllByOrderByCreatedAtDesc()
+                : apiKeyRepository.findByTenantIdOrderByCreatedAtDesc(SecurityUtils.getCurrentTenantId());
+        return keys.stream()
                 .map(this::toDto)
                 .toList();
     }
 
     @Transactional
     public CreateApiKeyResponse create(CreateApiKeyRequest request) {
+        return createForTenant(request, SecurityUtils.getCurrentTenantId());
+    }
+
+    @Transactional
+    public CreateApiKeyResponse createForTenant(CreateApiKeyRequest request, Long tenantId) {
         if (request.getName() == null || request.getName().isBlank()) {
             throw new BusinessException("密钥名称不能为空");
         }
@@ -58,6 +66,7 @@ public class ApiKeyManagementService {
         entity.setExpiresAt(request.getExpiresAt());
         entity.setCreatedAt(Instant.now());
         entity.setUpdatedAt(Instant.now());
+        entity.setTenantId(tenantId != null ? tenantId : SecurityUtils.getCurrentTenantId());
         ApiKey saved = apiKeyRepository.save(entity);
         CreateApiKeyResponse response = new CreateApiKeyResponse();
         copyToDto(saved, response);
@@ -94,14 +103,12 @@ public class ApiKeyManagementService {
         CreateApiKeyRequest request = new CreateApiKeyRequest();
         request.setName(oldKey.getName());
         request.setScopes(oldKey.getScopes());
-        return create(request);
+        return createForTenant(request, oldKey.getTenantId());
     }
 
     @Transactional
     public void delete(Long id) {
-        if (!apiKeyRepository.existsById(id)) {
-            throw new BusinessException("API 密钥不存在");
-        }
+        findById(id);
         apiKeyRepository.deleteById(id);
     }
 
@@ -135,8 +142,12 @@ public class ApiKeyManagementService {
     }
 
     private ApiKey findById(Long id) {
-        return apiKeyRepository.findById(id)
+        ApiKey key = apiKeyRepository.findById(id)
                 .orElseThrow(() -> new BusinessException("API 密钥不存在"));
+        if (!SecurityUtils.isSuperAdmin() && !SecurityUtils.getCurrentTenantId().equals(key.getTenantId())) {
+            throw new BusinessException("API 密钥不存在");
+        }
+        return key;
     }
 
     private ApiKeyDto toDto(ApiKey entity) {
@@ -155,6 +166,7 @@ public class ApiKeyManagementService {
         dto.setUpdatedAt(entity.getUpdatedAt());
         dto.setExpiresAt(entity.getExpiresAt());
         dto.setDeprecated(entity.isDeprecated());
+        dto.setTenantId(entity.getTenantId());
     }
 
     private String maskPrefix(String prefix) {

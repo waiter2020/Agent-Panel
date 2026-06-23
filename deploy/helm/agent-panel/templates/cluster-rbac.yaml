@@ -1,0 +1,30 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "agent-panel.fullname" . }}-metrics-reader
+  labels:
+    {{- include "agent-panel.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["nodes/stats", "nodes/proxy"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "agent-panel.fullname" . }}-metrics-reader
+  labels:
+    {{- include "agent-panel.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ include "agent-panel.namespace" . }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "agent-panel.fullname" . }}-metrics-reader
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

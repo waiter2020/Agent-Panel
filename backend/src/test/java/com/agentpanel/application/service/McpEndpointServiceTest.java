@@ -6,12 +6,17 @@ import com.agentpanel.application.entity.Application;
 import com.agentpanel.application.entity.McpEndpoint;
 import com.agentpanel.application.repository.ApplicationRepository;
 import com.agentpanel.application.repository.McpEndpointRepository;
+import com.agentpanel.auth.AuthPrincipal;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.List;
@@ -29,6 +34,18 @@ class McpEndpointServiceTest {
     @Mock private ObjectMapper objectMapper;
     @Mock private WebClient.Builder webClientBuilder;
     @InjectMocks private McpEndpointService mcpEndpointService;
+
+    @BeforeEach
+    void setUp() {
+        var principal = new AuthPrincipal(1L, "tenant-user", 1L);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, null, List.of()));
+    }
+
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
+    }
 
     @Test
     void discoverPopulatesMockToolsWhenUnreachable() {

@@ -7,6 +7,7 @@ import com.agentpanel.auth.SecurityUtils;
 import com.agentpanel.auth.repository.ApiKeyRepository;
 import com.agentpanel.common.BusinessException;
 import com.agentpanel.common.CryptoService;
+import com.agentpanel.common.TenantAccessHelper;
 import com.agentpanel.config.AgentPanelProperties;
 import com.agentpanel.auth.dto.CreateApiKeyRequest;
 import com.agentpanel.auth.dto.CreateApiKeyResponse;
@@ -56,6 +57,8 @@ public class ApplicationService {
     private final ObjectMapper objectMapper;
     private final SharedSkillRepository sharedSkillRepository;
     private final DockerHostDataPathResolver dockerHostDataPathResolver;
+    private final TaskKanbanService taskKanbanService;
+    private final OpenClawGatewayBootstrapService openClawGatewayBootstrapService;
 
     public List<AgentTemplate> listTemplates() {
         return templateRepository.findByDeletedFalse();
@@ -74,9 +77,14 @@ public class ApplicationService {
         return toDto(findApp(id));
     }
 
+    public Application requireApplication(Long id) {
+        return findApp(id);
+    }
+
     @Transactional
     public ApplicationDto create(ApplicationDto dto, HttpServletRequest request) {
-        if (applicationRepository.existsByNameAndDeletedFalse(dto.getName())) {
+        Long tenantId = SecurityUtils.getCurrentTenantId();
+        if (applicationRepository.existsByNameAndTenantIdAndDeletedFalse(dto.getName(), tenantId)) {
             throw new BusinessException("应用名称已存在");
         }
         AgentTemplate template = templateRepository.findById(dto.getTemplateId())
@@ -143,6 +151,7 @@ public class ApplicationService {
         }
         app.setDeleted(true);
         applicationRepository.save(app);
+        syncKanbanForApp(app);
         audit("delete", id, request);
     }
 
@@ -150,6 +159,7 @@ public class ApplicationService {
     public TopologyDto deployTopology(Long topologyId, HttpServletRequest request) {
         AgentTopology topology = topologyRepository.findByIdAndDeletedFalse(topologyId)
                 .orElseThrow(() -> new BusinessException("拓扑不存在"));
+        TenantAccessHelper.requireOwnedTenant(topology.getTenantId(), "拓扑不存在");
         List<AgentTopologyNode> nodes = topologyNodeRepository.findByTopologyId(topologyId);
         if (nodes.isEmpty()) {
             throw new BusinessException("拓扑中没有成员应用");
@@ -193,7 +203,9 @@ public class ApplicationService {
     public TopologyDto redeployTopology(Long topologyId, HttpServletRequest request) {
         AgentTopology topology = topologyRepository.findByIdAndDeletedFalse(topologyId)
                 .orElseThrow(() -> new BusinessException("拓扑不存在"));
+        TenantAccessHelper.requireOwnedTenant(topology.getTenantId(), "拓扑不存在");
         if (topology.getInferenceApiKeyId() != null) {
+            alignTopologyInferenceKeyTenant(topology);
             apiKeyRepository.findById(topology.getInferenceApiKeyId()).ifPresent(key -> {
                 if (key.isDeprecated()) {
                     String newKey = rotateTopologyInferenceKey(topology);
@@ -485,6 +497,7 @@ public class ApplicationService {
         Application app = findApp(id);
         app.setStatus("deploying");
         applicationRepository.save(app);
+        syncKanbanForApp(app);
         try {
             DeploySpec spec = buildDeploySpec(app, null, null);
             AgentRuntimeProvider provider = runtimeProviderFactory.get(resolveProvider(app));
@@ -508,10 +521,12 @@ public class ApplicationService {
             deployment.setSpecSnapshot(objectMapper.convertValue(spec, Map.class));
             deploymentRepository.save(deployment);
             audit("deploy", id, request);
+            syncKanbanForApp(app);
             return toDto(app);
         } catch (Exception e) {
             app.setStatus("error");
             applicationRepository.save(app);
+            syncKanbanForApp(app);
             throw e instanceof BusinessException ? (BusinessException) e
                     : new BusinessException("部署失败: " + e.getMessage());
         }
@@ -522,6 +537,7 @@ public class ApplicationService {
         runtimeProviderFactory.get(resolveProvider(app)).start(ref(app));
         app.setStatus("running");
         applicationRepository.save(app);
+        syncKanbanForApp(app);
         audit("start", id, request);
         return toDto(app);
     }
@@ -531,6 +547,7 @@ public class ApplicationService {
         runtimeProviderFactory.get(resolveProvider(app)).stop(ref(app));
         app.setStatus("stopped");
         applicationRepository.save(app);
+        syncKanbanForApp(app);
         audit("stop", id, request);
         return toDto(app);
     }
@@ -540,6 +557,7 @@ public class ApplicationService {
         runtimeProviderFactory.get(resolveProvider(app)).restart(ref(app));
         app.setStatus("running");
         applicationRepository.save(app);
+        syncKanbanForApp(app);
         audit("restart", id, request);
         return toDto(app);
     }
@@ -554,6 +572,7 @@ public class ApplicationService {
             if (!newStatus.equals(app.getStatus())) {
                 app.setStatus(newStatus);
                 applicationRepository.save(app);
+                syncKanbanForApp(app);
             }
         } catch (Exception e) {
             log.warn("同步应用 {} 运行时状态失败: {}", app.getId(), e.getMessage());
@@ -602,6 +621,7 @@ public class ApplicationService {
         topologyRepository.findByIdAndDeletedFalse(topologyId)
                 .ifPresent(t -> context.setTopologyName(t.getName()));
         context.setSkills(sharedSkillRepository.findByTopologyIdOrderByNameAsc(topologyId).stream()
+                .filter(skill -> skill.getApplicationId() == null || appId.equals(skill.getApplicationId()))
                 .map(skill -> {
                     com.agentpanel.memory.dto.SharedSkillDto dto = new com.agentpanel.memory.dto.SharedSkillDto();
                     dto.setId(skill.getId());
@@ -657,7 +677,9 @@ public class ApplicationService {
                 String.valueOf(resources.getOrDefault("cpu", "1")),
                 String.valueOf(resources.getOrDefault("memory", "1Gi"))
         );
-        Map<String, String> labels = Map.of("agentpanel.app", String.valueOf(app.getId()));
+        Map<String, String> labels = new LinkedHashMap<>();
+        labels.put("agentpanel.app", String.valueOf(app.getId()));
+        templateRepository.findById(app.getTemplateId()).ifPresent(t -> labels.put("agentpanel.template", t.getCode()));
         String containerName = "app-" + app.getId();
         boolean exposeViaIngress = "k8s".equals(resolveProvider(app))
                 && runtimeProperties.getK8s().isExposeViaIngress();
@@ -669,7 +691,9 @@ public class ApplicationService {
         Application app = findApp(id);
         app.setStatus("deploying");
         applicationRepository.save(app);
+        syncKanbanForApp(app);
         try {
+            openClawGatewayBootstrapService.bootstrapBeforeDeploy(app);
             DeploySpec spec = buildDeploySpec(app, network, null);
             AgentRuntimeProvider provider = runtimeProviderFactory.get(resolveProvider(app));
             DeployResult result = provider.deploy(spec);
@@ -692,10 +716,12 @@ public class ApplicationService {
             deployment.setSpecSnapshot(objectMapper.convertValue(spec, Map.class));
             deploymentRepository.save(deployment);
             audit("deploy", id, request);
+            syncKanbanForApp(app);
             return toDto(app);
         } catch (Exception e) {
             app.setStatus("error");
             applicationRepository.save(app);
+            syncKanbanForApp(app);
             throw e instanceof BusinessException ? (BusinessException) e
                     : new BusinessException("部署失败: " + e.getMessage());
         }
@@ -712,13 +738,14 @@ public class ApplicationService {
                 "memory:read", "memory:write",
                 "delegation:write",
                 "skill:read"));
-        CreateApiKeyResponse created = apiKeyManagementService.create(keyRequest);
+        CreateApiKeyResponse created = apiKeyManagementService.createForTenant(keyRequest, topology.getTenantId());
         topology.setInferenceApiKeyId(created.getId());
         topologyRepository.save(topology);
         return created.getRawKey();
     }
 
     private String findExistingInferenceKey(AgentTopology topology) {
+        alignTopologyInferenceKeyTenant(topology);
         List<AgentTopologyNode> nodes = topologyNodeRepository.findByTopologyId(topology.getId());
         for (AgentTopologyNode node : nodes) {
             for (AppEnv env : appEnvRepository.findByApplicationId(node.getApplicationId())) {
@@ -734,10 +761,23 @@ public class ApplicationService {
                 "memory:read", "memory:write",
                 "delegation:write",
                 "skill:read"));
-        CreateApiKeyResponse created = apiKeyManagementService.create(keyRequest);
+        CreateApiKeyResponse created = apiKeyManagementService.createForTenant(keyRequest, topology.getTenantId());
         topology.setInferenceApiKeyId(created.getId());
         topologyRepository.save(topology);
         return created.getRawKey();
+    }
+
+    private void alignTopologyInferenceKeyTenant(AgentTopology topology) {
+        if (topology.getInferenceApiKeyId() == null || topology.getTenantId() == null) {
+            return;
+        }
+        apiKeyRepository.findById(topology.getInferenceApiKeyId()).ifPresent(key -> {
+            if (!topology.getTenantId().equals(key.getTenantId())) {
+                key.setTenantId(topology.getTenantId());
+                key.setUpdatedAt(Instant.now());
+                apiKeyRepository.save(key);
+            }
+        });
     }
 
     private void injectInferenceEnv(Long appId, String inferenceRawKey) {
@@ -954,8 +994,21 @@ public class ApplicationService {
     }
 
     private Application findApp(Long id) {
-        return applicationRepository.findByIdAndDeletedFalse(id)
+        Application app = applicationRepository.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> new BusinessException("应用不存在"));
+        TenantAccessHelper.requireOwnedTenant(app.getTenantId(), "应用不存在");
+        return app;
+    }
+
+    private void syncKanbanForApp(Application app) {
+        if (app.getTenantId() == null) {
+            return;
+        }
+        try {
+            taskKanbanService.syncBoardsForTenant(app.getTenantId());
+        } catch (Exception e) {
+            log.warn("同步租户 {} 看板失败: {}", app.getTenantId(), e.getMessage());
+        }
     }
 
     private RuntimeRef ref(Application app) {
@@ -981,7 +1034,9 @@ public class ApplicationService {
         dto.setTemplateId(app.getTemplateId());
         templateRepository.findById(app.getTemplateId()).ifPresent(t -> {
             dto.setTemplateName(t.getName());
+            dto.setTemplateCode(t.getCode());
             dto.setEnvSchema(t.getEnvSchema());
+            dto.setManagementSchema(t.getManagementSchema());
         });
         dto.setOwnerId(app.getOwnerId());
         dto.setImage(app.getImage());

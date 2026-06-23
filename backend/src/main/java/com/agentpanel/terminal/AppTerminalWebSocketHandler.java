@@ -32,27 +32,33 @@ public class AppTerminalWebSocketHandler extends TextWebSocketHandler {
         if (authentication instanceof org.springframework.security.core.Authentication auth) {
             SecurityContextHolder.getContext().setAuthentication(auth);
         }
-        TerminalSession terminal = terminalService.open(appId, new TerminalOutputHandler() {
-            @Override
-            public void onOutput(byte[] data) {
-                sendJson(session, Map.of(
-                        "type", "output",
-                        "encoding", "base64",
-                        "data", Base64.getEncoder().encodeToString(data)));
-            }
+        try {
+            TerminalSession terminal = terminalService.open(appId, new TerminalOutputHandler() {
+                @Override
+                public void onOutput(byte[] data) {
+                    sendJson(session, Map.of(
+                            "type", "output",
+                            "encoding", "base64",
+                            "data", Base64.getEncoder().encodeToString(data)));
+                }
 
-            @Override
-            public void onError(String message) {
-                sendJson(session, Map.of("type", "error", "message", message));
-            }
+                @Override
+                public void onError(String message) {
+                    sendJson(session, Map.of("type", "error", "message", message));
+                }
 
-            @Override
-            public void onClosed() {
-                closeQuietly(session, CloseStatus.NORMAL);
-            }
-        });
-        sessions.put(session.getId(), terminal);
-        sendJson(session, Map.of("type", "connected", "message", "终端已连接"));
+                @Override
+                public void onClosed() {
+                    closeQuietly(session, CloseStatus.NORMAL);
+                }
+            });
+            sessions.put(session.getId(), terminal);
+            sendJson(session, Map.of("type", "connected", "message", "终端已连接"));
+        } catch (Exception e) {
+            log.warn("打开应用 {} 终端失败: {}", appId, e.getMessage());
+            sendJson(session, Map.of("type", "error", "message", e.getMessage()));
+            closeQuietly(session, CloseStatus.SERVER_ERROR);
+        }
     }
 
     @Override

@@ -26,6 +26,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
@@ -57,6 +58,7 @@ class TopologyServiceTest {
     @Mock private ObjectMapper objectMapper;
     @Mock private SharedSkillRepository sharedSkillRepository;
     @Mock private DockerRuntimeProvider dockerProvider;
+    @Mock private TaskKanbanService taskKanbanService;
 
     @InjectMocks
     private ApplicationService applicationService;
@@ -108,6 +110,12 @@ class TopologyServiceTest {
 
     @Test
     void deployTopologyInjectsInferenceAndUsesSharedNetwork() throws Exception {
+        topology.setTenantId(9L);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        new com.agentpanel.auth.AuthPrincipal(1L, "super-admin", 1L),
+                        null,
+                        List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))));
         when(topologyRepository.findByIdAndDeletedFalse(1L)).thenReturn(Optional.of(topology));
         when(topologyNodeRepository.findByTopologyId(1L)).thenReturn(List.of(node));
         when(linkRepository.findByTopologyId(1L)).thenReturn(List.of());
@@ -115,7 +123,7 @@ class TopologyServiceTest {
         when(appEnvRepository.findByApplicationId(100L)).thenReturn(List.of());
         when(templateRepository.findById(1L)).thenReturn(Optional.of(mockTemplate()));
         when(runtimeProviderFactory.get("docker")).thenReturn(dockerProvider);
-        when(apiKeyManagementService.create(any())).thenAnswer(inv -> {
+        when(apiKeyManagementService.createForTenant(any(), eq(9L))).thenAnswer(inv -> {
             CreateApiKeyResponse response = new CreateApiKeyResponse();
             response.setId(5L);
             response.setRawKey("apk_test_inference_key_1234567890");
@@ -134,6 +142,7 @@ class TopologyServiceTest {
 
         assertEquals("deployed", result.getStatus());
         assertEquals("apk_test_inference_key_1234567890", result.getInferenceKeyRaw());
+        verify(apiKeyManagementService).createForTenant(any(), eq(9L));
         verify(dockerProvider).ensureNetwork("topo-net");
         verify(appEnvRepository, atLeastOnce()).save(argThat(env ->
                 "OPENAI_BASE_URL".equals(env.getKey())

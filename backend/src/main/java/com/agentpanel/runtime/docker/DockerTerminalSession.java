@@ -24,7 +24,6 @@ class DockerTerminalSession implements TerminalSession {
 
     DockerTerminalSession(DockerClient dockerClient, String containerId, TerminalOutputHandler handler)
             throws IOException {
-        this.dockerClient = dockerClient;
         this.handler = handler;
         PipedInputStream stdinReader = new PipedInputStream();
         this.stdinWriter = new PipedOutputStream(stdinReader);
@@ -36,6 +35,7 @@ class DockerTerminalSession implements TerminalSession {
                 .withCmd("/bin/sh")
                 .exec();
         this.execId = create.getId();
+        this.dockerClient = dockerClient;
         this.callback = dockerClient.execStartCmd(execId)
                 .withStdIn(stdinReader)
                 .withDetach(false)
@@ -73,9 +73,9 @@ class DockerTerminalSession implements TerminalSession {
     @Override
     public void resize(int cols, int rows) {
         try {
-            dockerClient.execResizeCmd(execId).withSize(rows, cols).exec();
+            dockerClient.resizeExecCmd(execId).withSize(rows, cols).exec();
         } catch (Exception e) {
-            log.debug("调整终端尺寸失败: {}", e.getMessage());
+            log.debug("Docker 终端 resize 失败: cols={} rows={} execId={}: {}", cols, rows, execId, e.getMessage());
         }
     }
 

@@ -1,7 +1,7 @@
 import { request } from '@umijs/max';
 
-export async function listSkills(topologyId: number) {
-  const res = await request<API.ApiResponse<any[]>>('/api/skills', { params: { topologyId } });
+export async function listSkills(params: { topologyId?: number; applicationId?: number }) {
+  const res = await request<API.ApiResponse<any[]>>('/api/skills', { params });
   return res.data;
 }
 
@@ -19,7 +19,7 @@ export async function createSkill(data: {
 }, file?: File) {
   if (file) {
     const form = new FormData();
-    form.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }));
+    form.append('data', JSON.stringify(data));
     form.append('file', file);
     const res = await request<API.ApiResponse<any>>('/api/skills', { method: 'POST', data: form });
     return res.data;
@@ -36,7 +36,7 @@ export async function updateSkill(id: number, data: {
 }, file?: File) {
   if (file) {
     const form = new FormData();
-    form.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }));
+    form.append('data', JSON.stringify(data));
     form.append('file', file);
     const res = await request<API.ApiResponse<any>>(`/api/skills/${id}`, { method: 'PUT', data: form });
     return res.data;

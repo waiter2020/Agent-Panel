@@ -1,5 +1,6 @@
 package com.agentpanel.terminal;
 
+import com.agentpanel.auth.AuthPrincipal;
 import com.agentpanel.auth.JwtService;
 import com.agentpanel.system.entity.SysUser;
 import com.agentpanel.system.repository.SysUserRepository;
@@ -65,10 +66,19 @@ public class TerminalWebSocketInterceptor implements HandshakeInterceptor {
             }
             attributes.put("appId", Long.parseLong(matcher.group(1)));
             attributes.put("userId", userId);
-            attributes.put("username", claims.get("username", String.class));
+            String username = claims.get("username", String.class);
+            if (username == null || username.isBlank()) {
+                username = user.getUsername();
+            }
+            attributes.put("username", username);
+            Long tenantId = claims.get("tenantId", Long.class);
+            if (tenantId == null) {
+                tenantId = user.getTenantId() != null ? user.getTenantId() : 1L;
+            }
             var authorities = new ArrayList<SimpleGrantedAuthority>();
             authorities.addAll(permissions.stream().map(SimpleGrantedAuthority::new).collect(Collectors.toList()));
-            var auth = new UsernamePasswordAuthenticationToken(userId, null, authorities);
+            var principal = new AuthPrincipal(userId, username, tenantId);
+            var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
             attributes.put("authentication", auth);
             return true;
         } catch (Exception e) {

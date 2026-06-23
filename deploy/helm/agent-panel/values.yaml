@@ -13,7 +13,8 @@ replicaCount: 1
 service:
   type: ClusterIP
   port: 80
-  targetPort: 8080
+  targetPort: 80
+  managementPort: 8080
 
 ingress:
   enabled: true
@@ -38,9 +39,22 @@ panel:
   runtimeProvider: k8s
   inferenceUrl: http://agent-panel.agentpanel.svc.cluster.local/v1
   k8sInCluster: true
+  k8sAccessHost: localhost
   k8sExposeViaIngress: false
   k8sIngressHost: agentpanel.local
+  k8sIngressClass: ""
+  k8sIngressTlsSecret: ""
+  k8sStorageClass: ""
+  k8sVolumeStorageSize: 1Gi
   appsNamespace: agentpanel-apps
+
+openclaw:
+  # Pod CIDR where Agent Panel runs; OpenClaw Gateway trusts proxy requests from these networks.
+  trustedProxies:
+    - 10.244.0.0/16
+  k8s:
+    trustedProxyCidrs:
+      - 10.244.0.0/16
 
 database:
   external: false

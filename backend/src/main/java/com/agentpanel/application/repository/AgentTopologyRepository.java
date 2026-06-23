@@ -14,5 +14,5 @@ public interface AgentTopologyRepository extends JpaRepository<AgentTopology, Lo
 
     Optional<AgentTopology> findByIdAndDeletedFalse(Long id);
 
-    boolean existsByNameAndDeletedFalse(String name);
+    boolean existsByNameAndTenantIdAndDeletedFalse(String name, Long tenantId);
 }

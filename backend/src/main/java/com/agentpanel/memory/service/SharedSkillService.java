@@ -1,9 +1,13 @@
 package com.agentpanel.memory.service;
 
+import com.agentpanel.application.repository.AgentTopologyNodeRepository;
 import com.agentpanel.application.repository.AgentTopologyRepository;
 import com.agentpanel.application.repository.ApplicationRepository;
 import com.agentpanel.auth.SecurityUtils;
+import com.agentpanel.application.entity.AgentTopology;
+import com.agentpanel.application.entity.Application;
 import com.agentpanel.common.BusinessException;
+import com.agentpanel.common.TenantAccessHelper;
 import com.agentpanel.memory.dto.CreateSkillRequest;
 import com.agentpanel.memory.dto.SharedSkillDto;
 import com.agentpanel.memory.dto.SkillReloadEventDto;
@@ -36,14 +40,38 @@ public class SharedSkillService {
 
     private final SharedSkillRepository sharedSkillRepository;
     private final AgentTopologyRepository topologyRepository;
+    private final AgentTopologyNodeRepository topologyNodeRepository;
     private final ApplicationRepository applicationRepository;
     private final StorageService storageService;
     private final AuditService auditService;
     private final AuditLogRepository auditLogRepository;
 
-    public List<SharedSkillDto> listByTopology(Long topologyId) {
-        ensureTopology(topologyId);
-        return sharedSkillRepository.findByTopologyIdOrderByNameAsc(topologyId).stream()
+    public List<SharedSkillDto> list(Long topologyId, Long applicationId) {
+        if (topologyId == null && applicationId == null) {
+            throw new BusinessException("请指定 topologyId 或 applicationId");
+        }
+        Long effectiveTopologyId = topologyId;
+        if (effectiveTopologyId == null && applicationId != null) {
+            var nodes = topologyNodeRepository.findByApplicationId(applicationId);
+            if (!nodes.isEmpty()) {
+                effectiveTopologyId = nodes.getFirst().getTopologyId();
+            }
+        }
+        if (effectiveTopologyId != null) {
+            AgentTopology topology = ensureTopology(effectiveTopologyId);
+            if (applicationId != null) {
+                ensureApplicationInTenant(applicationId, topology.getTenantId());
+            }
+            Long appFilter = applicationId;
+            return sharedSkillRepository.findByTopologyIdOrderByNameAsc(effectiveTopologyId).stream()
+                    .filter(skill -> appFilter == null
+                            || skill.getApplicationId() == null
+                            || appFilter.equals(skill.getApplicationId()))
+                    .map(this::toDto)
+                    .toList();
+        }
+        ensureApplication(applicationId);
+        return sharedSkillRepository.findByApplicationIdOrderByNameAsc(applicationId).stream()
                 .map(this::toDto)
                 .toList();
     }
@@ -60,9 +88,9 @@ public class SharedSkillService {
         if (request.getName() == null || request.getName().isBlank()) {
             throw new BusinessException("技能名称不能为空");
         }
-        ensureTopology(request.getTopologyId());
+        AgentTopology topology = ensureTopology(request.getTopologyId());
         if (request.getApplicationId() != null) {
-            ensureApplication(request.getApplicationId());
+            ensureApplicationInTenant(request.getApplicationId(), topology.getTenantId());
         }
         if (sharedSkillRepository.existsByTopologyIdAndName(request.getTopologyId(), request.getName().trim())) {
             throw new BusinessException("该拓扑下已存在同名技能");
@@ -99,7 +127,8 @@ public class SharedSkillService {
             skill.setContent(request.getContent());
         }
         if (request.getApplicationId() != null) {
-            ensureApplication(request.getApplicationId());
+            AgentTopology topology = ensureTopology(skill.getTopologyId());
+            ensureApplicationInTenant(request.getApplicationId(), topology.getTenantId());
             skill.setApplicationId(request.getApplicationId());
         }
         if (request.getMetadata() != null) {
@@ -232,18 +261,31 @@ public class SharedSkillService {
     }
 
     private SharedSkill findSkill(Long id) {
-        return sharedSkillRepository.findById(id)
+        SharedSkill skill = sharedSkillRepository.findById(id)
                 .orElseThrow(() -> new BusinessException("技能不存在"));
+        ensureTopology(skill.getTopologyId());
+        return skill;
     }
 
-    private void ensureTopology(Long topologyId) {
-        topologyRepository.findByIdAndDeletedFalse(topologyId)
+    private AgentTopology ensureTopology(Long topologyId) {
+        AgentTopology topology = topologyRepository.findByIdAndDeletedFalse(topologyId)
                 .orElseThrow(() -> new BusinessException("拓扑不存在"));
+        TenantAccessHelper.requireOwnedTenant(topology.getTenantId(), "拓扑不存在");
+        return topology;
     }
 
-    private void ensureApplication(Long applicationId) {
-        applicationRepository.findByIdAndDeletedFalse(applicationId)
+    private Application ensureApplication(Long applicationId) {
+        Application app = applicationRepository.findByIdAndDeletedFalse(applicationId)
                 .orElseThrow(() -> new BusinessException("应用不存在"));
+        TenantAccessHelper.requireOwnedTenant(app.getTenantId(), "应用不存在");
+        return app;
+    }
+
+    private void ensureApplicationInTenant(Long applicationId, Long tenantId) {
+        Application app = ensureApplication(applicationId);
+        if (tenantId == null || !tenantId.equals(app.getTenantId())) {
+            throw new BusinessException("应用不存在");
+        }
     }
 
     private SharedSkillDto toDto(SharedSkill skill) {

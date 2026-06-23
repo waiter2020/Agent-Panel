@@ -12,6 +12,12 @@ const statusMap: Record<string, string> = {
   error: '错误',
 };
 
+const templateColor: Record<string, string> = {
+  openclaw: 'blue',
+  hermes: 'purple',
+  openclaude: 'cyan',
+};
+
 export default () => {
   const actionRef = useRef<any>();
   const access = useAccess();
@@ -20,9 +26,14 @@ export default () => {
       <ProTable
         actionRef={actionRef}
         rowKey="id"
-        search={false}
-        request={async () => {
-          const data = await listApps();
+        request={async (params) => {
+          let data = await listApps();
+          if (params.templateCode) {
+            data = data.filter((a: any) => a.templateCode === params.templateCode);
+          }
+          if (params.status) {
+            data = data.filter((a: any) => a.status === params.status);
+          }
           return { data, success: true };
         }}
         toolBarRender={() => [
@@ -32,19 +43,48 @@ export default () => {
         ].filter(Boolean)}
         columns={[
           { title: '名称', dataIndex: 'name' },
-          { title: '模板', dataIndex: 'templateName' },
-          { title: '镜像', dataIndex: 'image' },
-          { title: '标签', dataIndex: 'tag' },
+          {
+            title: '模板',
+            dataIndex: 'templateCode',
+            valueType: 'select',
+            valueEnum: {
+              openclaw: { text: 'OpenClaw' },
+              hermes: { text: 'Hermes' },
+              openclaude: { text: 'openclaude' },
+            },
+            render: (_, r) => (
+              <Tag color={templateColor[r.templateCode] || 'default'}>{r.templateName || r.templateCode}</Tag>
+            ),
+          },
+          { title: '镜像', dataIndex: 'image', hideInSearch: true, ellipsis: true },
+          { title: '标签', dataIndex: 'tag', hideInSearch: true },
           {
             title: '状态',
             dataIndex: 'status',
+            valueType: 'select',
+            valueEnum: {
+              created: { text: '已创建' },
+              running: { text: '运行中' },
+              stopped: { text: '已停止' },
+              error: { text: '错误' },
+            },
             render: (_, r) => <Tag color={r.status === 'running' ? 'green' : 'default'}>{statusMap[r.status] || r.status}</Tag>,
           },
           {
             title: '操作',
             valueType: 'option',
+            hideInSearch: true,
             render: (_, record) => [
               <a key="detail" onClick={() => history.push(`/app/detail/${record.id}`)}>详情</a>,
+              access.canAccessFiles && (
+                <a key="files" onClick={() => history.push(`/files?appId=${record.id}`)}>文件</a>
+              ),
+              access.canViewMemory && (
+                <a key="memory" onClick={() => history.push(`/app/detail/${record.id}?tab=memory`)}>记忆</a>
+              ),
+              record.status === 'running' && (
+                <a key="console" onClick={() => history.push(`/app/detail/${record.id}?tab=console`)}>终端</a>
+              ),
               access.canDeployApp && (
                 <a key="deploy" onClick={async () => { await deployApp(record.id); message.success('部署已触发'); actionRef.current?.reload(); }}>部署</a>
               ),

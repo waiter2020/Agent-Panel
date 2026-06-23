@@ -8,4 +8,6 @@ import java.util.List;
 public interface DelegationTraceRepository extends JpaRepository<DelegationTrace, Long> {
 
     List<DelegationTrace> findByTopologyIdOrderByStartedAtDesc(Long topologyId);
+
+    List<DelegationTrace> findByParentAppIdOrChildAppIdOrderByStartedAtDesc(Long parentAppId, Long childAppId);
 }

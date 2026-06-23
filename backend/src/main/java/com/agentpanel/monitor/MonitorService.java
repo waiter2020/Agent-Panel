@@ -1,6 +1,6 @@
 package com.agentpanel.monitor;
 
-import com.agentpanel.application.repository.ApplicationRepository;
+import com.agentpanel.application.entity.Application;
 import com.agentpanel.application.service.ApplicationService;
 import com.agentpanel.common.BusinessException;
 import com.agentpanel.runtime.RuntimeProviderFactory;
@@ -21,13 +21,13 @@ import java.time.Duration;
 public class MonitorService {
 
     private final ApplicationService applicationService;
-    private final ApplicationRepository applicationRepository;
     private final RuntimeProviderFactory runtimeProviderFactory;
     private final com.agentpanel.config.AgentRuntimeProperties runtimeProperties;
+    private final StatsRateTracker statsRateTracker;
 
     public Flux<ResourceStats> statsStream(Long appId) {
         return Flux.interval(Duration.ofSeconds(5))
-                .map(tick -> safeGetStats(appId))
+                .map(tick -> statsRateTracker.enrich(appId, safeGetStats(appId)))
                 .onErrorResume(e -> {
                     log.warn("应用 {} 监控流异常: {}", appId, e.getMessage());
                     return Flux.just(ResourceStats.unavailable("监控流异常: " + e.getMessage()));
@@ -47,8 +47,7 @@ public class MonitorService {
     }
 
     public Flux<String> logsStream(Long appId, LogOptions options) {
-        var app = applicationRepository.findByIdAndDeletedFalse(appId)
-                .orElseThrow(() -> new BusinessException("应用不存在"));
+        Application app = applicationService.requireApplication(appId);
         if (app.getRuntimeRef() == null) {
             return Flux.just("应用尚未部署");
         }

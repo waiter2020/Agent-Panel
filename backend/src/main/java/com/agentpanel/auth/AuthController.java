@@ -3,8 +3,11 @@ package com.agentpanel.auth;
 import com.agentpanel.auth.dto.CurrentUserResponse;
 import com.agentpanel.auth.dto.LoginRequest;
 import com.agentpanel.auth.dto.LoginResponse;
+import com.agentpanel.auth.dto.ProxySessionRequest;
 import com.agentpanel.common.ApiResponse;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -43,5 +46,20 @@ public class AuthController {
     @PostMapping("/sse-ticket")
     public ApiResponse<Map<String, String>> sseTicket() {
         return ApiResponse.ok(authService.createSseTicket());
+    }
+
+    @PostMapping("/proxy-session")
+    public ApiResponse<Map<String, Boolean>> proxySession(@RequestBody ProxySessionRequest request,
+                                                          HttpServletRequest httpRequest,
+                                                          HttpServletResponse httpResponse) {
+        String token = authService.createProxySession(request.getAppId(), request.getConsoleKey());
+        Cookie cookie = new Cookie("AP_PROXY", token);
+        cookie.setPath("/api/apps/" + request.getAppId() + "/");
+        cookie.setHttpOnly(true);
+        cookie.setMaxAge(600);
+        cookie.setSecure(httpRequest.isSecure());
+        cookie.setAttribute("SameSite", "Lax");
+        httpResponse.addCookie(cookie);
+        return ApiResponse.ok(Map.of("ready", true));
     }
 }

@@ -30,8 +30,10 @@ public class SkillController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('skill:read')")
-    public ApiResponse<List<SharedSkillDto>> list(@RequestParam Long topologyId) {
-        return ApiResponse.ok(sharedSkillService.listByTopology(topologyId));
+    public ApiResponse<List<SharedSkillDto>> list(
+            @RequestParam(required = false) Long topologyId,
+            @RequestParam(required = false) Long applicationId) {
+        return ApiResponse.ok(sharedSkillService.list(topologyId, applicationId));
     }
 
     @GetMapping("/reload-events")

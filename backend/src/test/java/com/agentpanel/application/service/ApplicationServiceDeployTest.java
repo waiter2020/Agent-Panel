@@ -46,6 +46,8 @@ class ApplicationServiceDeployTest {
     @Mock private ObjectMapper objectMapper;
     @Mock private AgentRuntimeProvider runtimeProvider;
     @Mock private DockerHostDataPathResolver dockerHostDataPathResolver;
+    @Mock private TaskKanbanService taskKanbanService;
+    @Mock private OpenClawGatewayBootstrapService openClawGatewayBootstrapService;
 
     @InjectMocks
     private ApplicationService applicationService;

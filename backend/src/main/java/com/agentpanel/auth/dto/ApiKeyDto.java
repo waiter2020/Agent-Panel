@@ -18,4 +18,5 @@ public class ApiKeyDto {
     private Instant updatedAt;
     private Instant expiresAt;
     private boolean deprecated;
+    private Long tenantId;
 }

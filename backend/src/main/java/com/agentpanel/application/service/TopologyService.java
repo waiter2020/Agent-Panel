@@ -11,6 +11,7 @@ import com.agentpanel.application.repository.ApplicationRepository;
 import com.agentpanel.auth.SecurityUtils;
 import com.agentpanel.auth.repository.ApiKeyRepository;
 import com.agentpanel.common.BusinessException;
+import com.agentpanel.common.TenantAccessHelper;
 import com.agentpanel.system.service.AuditService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -53,7 +54,8 @@ public class TopologyService {
         if (request.getName() == null || request.getName().isBlank()) {
             throw new BusinessException("拓扑名称不能为空");
         }
-        if (topologyRepository.existsByNameAndDeletedFalse(request.getName().trim())) {
+        Long tenantId = SecurityUtils.getCurrentTenantId();
+        if (topologyRepository.existsByNameAndTenantIdAndDeletedFalse(request.getName().trim(), tenantId)) {
             throw new BusinessException("拓扑名称已存在");
         }
         AgentTopology topology = new AgentTopology();
@@ -74,7 +76,8 @@ public class TopologyService {
         AgentTopology topology = findTopology(id);
         if (request.getName() != null && !request.getName().isBlank()
                 && !request.getName().trim().equals(topology.getName())
-                && topologyRepository.existsByNameAndDeletedFalse(request.getName().trim())) {
+                && topologyRepository.existsByNameAndTenantIdAndDeletedFalse(
+                        request.getName().trim(), topology.getTenantId())) {
             throw new BusinessException("拓扑名称已存在");
         }
         if (request.getName() != null && !request.getName().isBlank()) {
@@ -107,6 +110,9 @@ public class TopologyService {
         }
         Application app = applicationRepository.findByIdAndDeletedFalse(request.getApplicationId())
                 .orElseThrow(() -> new BusinessException("应用不存在"));
+        if (app.getTenantId() == null || !app.getTenantId().equals(topology.getTenantId())) {
+            throw new BusinessException("应用不存在");
+        }
         if (nodeRepository.findByTopologyIdAndApplicationId(topologyId, app.getId()).isPresent()) {
             throw new BusinessException("应用已在拓扑中");
         }
@@ -159,8 +165,10 @@ public class TopologyService {
     }
 
     private AgentTopology findTopology(Long id) {
-        return topologyRepository.findByIdAndDeletedFalse(id)
+        AgentTopology topology = topologyRepository.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> new BusinessException("拓扑不存在"));
+        TenantAccessHelper.requireOwnedTenant(topology.getTenantId(), "拓扑不存在");
+        return topology;
     }
 
     private TopologyDto toDto(AgentTopology topology) {

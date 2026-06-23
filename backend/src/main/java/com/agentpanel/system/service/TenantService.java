@@ -1,5 +1,6 @@
 package com.agentpanel.system.service;
 
+import com.agentpanel.application.service.KanbanBoardInitializer;
 import com.agentpanel.common.BusinessException;
 import com.agentpanel.system.dto.TenantDto;
 import com.agentpanel.system.entity.SysTenant;
@@ -15,6 +16,7 @@ import java.util.List;
 public class TenantService {
 
     private final SysTenantRepository tenantRepository;
+    private final KanbanBoardInitializer kanbanBoardInitializer;
 
     public List<TenantDto> list() {
         return tenantRepository.findAll().stream().map(this::toDto).toList();
@@ -39,7 +41,9 @@ public class TenantService {
         SysTenant tenant = new SysTenant();
         tenant.setName(dto.getName().trim());
         tenant.setCode(code);
-        return toDto(tenantRepository.save(tenant));
+        SysTenant saved = tenantRepository.save(tenant);
+        kanbanBoardInitializer.ensureDefaultBoard(saved.getId());
+        return toDto(saved);
     }
 
     @Transactional

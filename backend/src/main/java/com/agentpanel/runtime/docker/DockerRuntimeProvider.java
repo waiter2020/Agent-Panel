@@ -172,13 +172,7 @@ public class DockerRuntimeProvider implements AgentRuntimeProvider {
         if (!allowUnconfigured) {
             return;
         }
-        String token = containerEnv.get("OPENCLAW_GATEWAY_TOKEN");
-        if (token == null || token.isBlank()) {
-            token = UUID.randomUUID().toString();
-            containerEnv.put("OPENCLAW_GATEWAY_TOKEN", token);
-        }
-        createCmd.withCmd("node", "openclaw.mjs", "gateway", "--allow-unconfigured",
-                "--auth", "token", "--token", token);
+        createCmd.withCmd("node", "openclaw.mjs", "gateway", "--allow-unconfigured");
     }
 
     private DeployResult evaluateDeployResult(String containerId, List<PortMapping> resolvedPorts)
@@ -325,7 +319,19 @@ public class DockerRuntimeProvider implements AgentRuntimeProvider {
             long memLimit = stats.getMemoryStats() != null && stats.getMemoryStats().getLimit() != null
                     ? stats.getMemoryStats().getLimit() : 0;
             double cpuPercent = calculateCpuPercent(stats);
-            return ResourceStats.ok(cpuPercent, memUsage, memLimit, 0, 0);
+            long netRx = 0;
+            long netTx = 0;
+            if (stats.getNetworks() != null) {
+                for (var network : stats.getNetworks().values()) {
+                    if (network.getRxBytes() != null) {
+                        netRx += network.getRxBytes();
+                    }
+                    if (network.getTxBytes() != null) {
+                        netTx += network.getTxBytes();
+                    }
+                }
+            }
+            return ResourceStats.ok(cpuPercent, memUsage, memLimit, netRx, netTx, true);
         } catch (Exception e) {
             log.warn("Docker stats 采集失败 containerId={}: {}", ref.ref(), e.getMessage());
             return ResourceStats.unavailable("Docker stats 采集失败: " + e.getMessage());
@@ -502,16 +508,25 @@ public class DockerRuntimeProvider implements AgentRuntimeProvider {
         if (stats.getCpuStats() == null || stats.getPreCpuStats() == null) {
             return 0;
         }
-        Long cpuDelta = stats.getCpuStats().getCpuUsage().getTotalUsage()
-                - stats.getPreCpuStats().getCpuUsage().getTotalUsage();
-        Long systemDelta = stats.getCpuStats().getSystemCpuUsage()
-                - stats.getPreCpuStats().getSystemCpuUsage();
-        if (cpuDelta == null || systemDelta == null || systemDelta <= 0) {
+        var cpuStats = stats.getCpuStats();
+        var preCpuStats = stats.getPreCpuStats();
+        if (cpuStats.getCpuUsage() == null || preCpuStats.getCpuUsage() == null) {
             return 0;
         }
-        int onlineCpus = stats.getCpuStats().getOnlineCpus() != null
-                ? stats.getCpuStats().getOnlineCpus().intValue() : 1;
-        return (cpuDelta.doubleValue() / systemDelta.doubleValue()) * onlineCpus * 100.0;
+        Long currentTotal = cpuStats.getCpuUsage().getTotalUsage();
+        Long preTotal = preCpuStats.getCpuUsage().getTotalUsage();
+        Long currentSystem = cpuStats.getSystemCpuUsage();
+        Long preSystem = preCpuStats.getSystemCpuUsage();
+        if (currentTotal == null || preTotal == null || currentSystem == null || preSystem == null) {
+            return 0;
+        }
+        long cpuDelta = currentTotal - preTotal;
+        long systemDelta = currentSystem - preSystem;
+        if (cpuDelta < 0 || systemDelta <= 0) {
+            return 0;
+        }
+        int onlineCpus = cpuStats.getOnlineCpus() != null ? cpuStats.getOnlineCpus().intValue() : 1;
+        return (cpuDelta / (double) systemDelta) * onlineCpus * 100.0;
     }
 
     public void ensureNetwork(String networkName) {

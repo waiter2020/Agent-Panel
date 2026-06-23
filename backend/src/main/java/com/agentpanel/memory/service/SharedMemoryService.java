@@ -1,9 +1,12 @@
 package com.agentpanel.memory.service;
 
+import com.agentpanel.application.entity.AgentTopology;
+import com.agentpanel.application.entity.Application;
 import com.agentpanel.application.repository.AgentTopologyRepository;
 import com.agentpanel.application.repository.ApplicationRepository;
 import com.agentpanel.auth.SecurityUtils;
 import com.agentpanel.common.BusinessException;
+import com.agentpanel.common.TenantAccessHelper;
 import com.agentpanel.config.MemoryProperties;
 import com.agentpanel.memory.dto.SharedMemoryDto;
 import com.agentpanel.memory.dto.StoreMemoryRequest;
@@ -19,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -54,7 +58,7 @@ public class SharedMemoryService {
             throw new BusinessException("记忆内容不能为空");
         }
         String scope = normalizeScope(request.getScope());
-        validateScope(scope, request.getTopologyId(), request.getApplicationId());
+        Long tenantId = validateScopeAndResolveTenantId(scope, request.getTopologyId(), request.getApplicationId());
 
         SharedMemory memory = new SharedMemory();
         memory.setKey(request.getKey().trim());
@@ -62,6 +66,7 @@ public class SharedMemoryService {
         memory.setScope(scope);
         memory.setTopologyId(request.getTopologyId());
         memory.setApplicationId(request.getApplicationId());
+        memory.setTenantId(tenantId);
         memory.setMetadata(request.getMetadata() == null ? Map.of() : request.getMetadata());
         memory.setCreatedBy(SecurityUtils.getCurrentUserId());
         memory = sharedMemoryRepository.save(memory);
@@ -78,6 +83,7 @@ public class SharedMemoryService {
 
     public List<SharedMemoryDto> search(String query, Long topologyId, Long applicationId, int limit) {
         int capped = Math.min(Math.max(limit, 1), 50);
+        Long tenantFilter = resolveReadTenantId(topologyId, applicationId);
         if (query == null || query.isBlank()) {
             return list(topologyId, applicationId, scopeFromFilters(topologyId, applicationId)).stream()
                     .limit(capped)
@@ -94,47 +100,65 @@ public class SharedMemoryService {
                     FROM shared_memory
                     WHERE embedding IS NOT NULL
                     """);
+            List<Object> params = new ArrayList<>();
+            params.add(vectorLiteral);
+            if (tenantFilter != null) {
+                sql.append(" AND tenant_id = ?");
+                params.add(tenantFilter);
+            }
             if (topologyId != null) {
-                sql.append(" AND topology_id = ").append(topologyId);
+                sql.append(" AND topology_id = ?");
+                params.add(topologyId);
             }
             if (applicationId != null) {
-                sql.append(" AND application_id = ").append(applicationId);
+                sql.append(" AND application_id = ?");
+                params.add(applicationId);
             }
             sql.append(" ORDER BY embedding <=> ?::vector LIMIT ?");
+            params.add(vectorLiteral);
+            params.add(capped);
             return jdbcTemplate.query(
                     sql.toString(),
                     (rs, rowNum) -> mapRow(rs),
-                    vectorLiteral,
-                    vectorLiteral,
-                    capped);
+                    params.toArray());
         }
 
-        return sharedMemoryRepository.searchByKeyword(query.trim(), PageRequest.of(0, capped)).stream()
+        List<SharedMemory> matches = tenantFilter == null
+                ? sharedMemoryRepository.searchByKeyword(query.trim(), PageRequest.of(0, capped))
+                : sharedMemoryRepository.searchByKeywordAndTenantId(query.trim(), tenantFilter, PageRequest.of(0, capped));
+        return matches.stream()
                 .filter(m -> matchesFilters(m, topologyId, applicationId))
                 .map(m -> toDto(m, null))
                 .toList();
     }
 
     public List<SharedMemoryDto> list(Long topologyId, Long applicationId, String scope) {
+        Long tenantFilter = resolveReadTenantId(topologyId, applicationId);
         List<SharedMemory> memories;
-        if (topologyId != null) {
-            memories = sharedMemoryRepository.findByTopologyIdOrderByCreatedAtDesc(topologyId);
+        if (topologyId != null && applicationId != null) {
+            memories = findByTopology(topologyId, tenantFilter).stream()
+                    .filter(m -> applicationId.equals(m.getApplicationId()))
+                    .toList();
+        } else if (topologyId != null) {
+            memories = findByTopology(topologyId, tenantFilter);
         } else if (applicationId != null) {
-            memories = sharedMemoryRepository.findByApplicationIdOrderByCreatedAtDesc(applicationId);
+            memories = findByApplication(applicationId, tenantFilter);
         } else if (scope != null && !scope.isBlank()) {
-            memories = sharedMemoryRepository.findByScopeOrderByCreatedAtDesc(normalizeScope(scope));
+            memories = findByScope(normalizeScope(scope), tenantFilter);
         } else {
-            memories = sharedMemoryRepository.findAllByOrderByCreatedAtDesc();
+            memories = tenantFilter == null
+                    ? sharedMemoryRepository.findAllByOrderByCreatedAtDesc()
+                    : sharedMemoryRepository.findByTenantIdOrderByCreatedAtDesc(tenantFilter);
         }
         return memories.stream().map(m -> toDto(m, null)).toList();
     }
 
     @Transactional
     public void delete(Long id) {
-        if (!sharedMemoryRepository.existsById(id)) {
-            throw new BusinessException("记忆不存在");
-        }
-        sharedMemoryRepository.deleteById(id);
+        SharedMemory memory = sharedMemoryRepository.findById(id)
+                .orElseThrow(() -> new BusinessException("记忆不存在"));
+        TenantAccessHelper.requireOwnedTenant(memory.getTenantId(), "记忆不存在");
+        sharedMemoryRepository.delete(memory);
     }
 
     private float[] embedIfAvailable(String content) {
@@ -149,20 +173,82 @@ public class SharedMemoryService {
         }
     }
 
-    private void validateScope(String scope, Long topologyId, Long applicationId) {
+    private Long validateScopeAndResolveTenantId(String scope, Long topologyId, Long applicationId) {
+        Long tenantId;
         if ("topology".equals(scope)) {
             if (topologyId == null) {
                 throw new BusinessException("拓扑范围记忆需要 topologyId");
             }
-            topologyRepository.findByIdAndDeletedFalse(topologyId)
+            AgentTopology topology = topologyRepository.findByIdAndDeletedFalse(topologyId)
                     .orElseThrow(() -> new BusinessException("拓扑不存在"));
+            TenantAccessHelper.requireOwnedTenant(topology.getTenantId(), "拓扑不存在");
+            tenantId = topology.getTenantId();
         } else if ("app".equals(scope)) {
             if (applicationId == null) {
                 throw new BusinessException("应用范围记忆需要 applicationId");
             }
-            applicationRepository.findByIdAndDeletedFalse(applicationId)
+            Application app = applicationRepository.findByIdAndDeletedFalse(applicationId)
                     .orElseThrow(() -> new BusinessException("应用不存在"));
+            TenantAccessHelper.requireOwnedTenant(app.getTenantId(), "应用不存在");
+            tenantId = app.getTenantId();
+        } else {
+            tenantId = SecurityUtils.getCurrentTenantId();
         }
+        if (topologyId != null) {
+            AgentTopology topology = topologyRepository.findByIdAndDeletedFalse(topologyId)
+                    .orElseThrow(() -> new BusinessException("拓扑不存在"));
+            TenantAccessHelper.requireOwnedTenant(topology.getTenantId(), "拓扑不存在");
+            if (!tenantId.equals(topology.getTenantId())) {
+                throw new BusinessException("拓扑不存在");
+            }
+        }
+        if (applicationId != null) {
+            Application app = applicationRepository.findByIdAndDeletedFalse(applicationId)
+                    .orElseThrow(() -> new BusinessException("应用不存在"));
+            TenantAccessHelper.requireOwnedTenant(app.getTenantId(), "应用不存在");
+            if (!tenantId.equals(app.getTenantId())) {
+                throw new BusinessException("应用不存在");
+            }
+        }
+        return tenantId;
+    }
+
+    private Long resolveReadTenantId(Long topologyId, Long applicationId) {
+        Long tenantId = SecurityUtils.isSuperAdmin() ? null : SecurityUtils.getCurrentTenantId();
+        if (topologyId != null) {
+            AgentTopology topology = topologyRepository.findByIdAndDeletedFalse(topologyId)
+                    .orElseThrow(() -> new BusinessException("拓扑不存在"));
+            TenantAccessHelper.requireOwnedTenant(topology.getTenantId(), "拓扑不存在");
+            tenantId = topology.getTenantId();
+        }
+        if (applicationId != null) {
+            Application app = applicationRepository.findByIdAndDeletedFalse(applicationId)
+                    .orElseThrow(() -> new BusinessException("应用不存在"));
+            TenantAccessHelper.requireOwnedTenant(app.getTenantId(), "应用不存在");
+            if (tenantId != null && !tenantId.equals(app.getTenantId())) {
+                throw new BusinessException("应用不存在");
+            }
+            tenantId = app.getTenantId();
+        }
+        return tenantId;
+    }
+
+    private List<SharedMemory> findByTopology(Long topologyId, Long tenantId) {
+        return tenantId == null
+                ? sharedMemoryRepository.findByTopologyIdOrderByCreatedAtDesc(topologyId)
+                : sharedMemoryRepository.findByTopologyIdAndTenantIdOrderByCreatedAtDesc(topologyId, tenantId);
+    }
+
+    private List<SharedMemory> findByApplication(Long applicationId, Long tenantId) {
+        return tenantId == null
+                ? sharedMemoryRepository.findByApplicationIdOrderByCreatedAtDesc(applicationId)
+                : sharedMemoryRepository.findByApplicationIdAndTenantIdOrderByCreatedAtDesc(applicationId, tenantId);
+    }
+
+    private List<SharedMemory> findByScope(String scope, Long tenantId) {
+        return tenantId == null
+                ? sharedMemoryRepository.findByScopeOrderByCreatedAtDesc(scope)
+                : sharedMemoryRepository.findByScopeAndTenantIdOrderByCreatedAtDesc(scope, tenantId);
     }
 
     private String normalizeScope(String scope) {

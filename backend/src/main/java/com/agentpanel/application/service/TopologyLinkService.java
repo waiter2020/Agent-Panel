@@ -12,6 +12,7 @@ import com.agentpanel.application.repository.AgentTopologyRepository;
 import com.agentpanel.application.repository.ApplicationRepository;
 import com.agentpanel.auth.SecurityUtils;
 import com.agentpanel.common.BusinessException;
+import com.agentpanel.common.TenantAccessHelper;
 import com.agentpanel.config.AgentRuntimeProperties;
 import com.agentpanel.system.service.AuditService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -110,8 +111,10 @@ public class TopologyLinkService {
     }
 
     private AgentTopology findTopology(Long id) {
-        return topologyRepository.findByIdAndDeletedFalse(id)
+        AgentTopology topology = topologyRepository.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> new BusinessException("拓扑不存在"));
+        TenantAccessHelper.requireOwnedTenant(topology.getTenantId(), "拓扑不存在");
+        return topology;
     }
 
     private AgentTopologyNode findNode(Long topologyId, Long nodeId) {

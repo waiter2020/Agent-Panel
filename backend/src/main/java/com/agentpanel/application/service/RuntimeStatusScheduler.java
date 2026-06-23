@@ -13,6 +13,7 @@ public class RuntimeStatusScheduler {
 
     private final ApplicationRepository applicationRepository;
     private final ApplicationService applicationService;
+    private final TaskKanbanService taskKanbanService;
 
     @Scheduled(fixedRate = 30000)
     public void syncStatuses() {
@@ -23,5 +24,10 @@ public class RuntimeStatusScheduler {
         log.debug("开始同步运行时状态: count={}", apps.size());
         apps.forEach(applicationService::syncRuntimeStatus);
         log.debug("运行时状态同步完成: count={}", apps.size());
+        try {
+            taskKanbanService.syncAllBoards();
+        } catch (Exception e) {
+            log.warn("看板自动同步失败: {}", e.getMessage());
+        }
     }
 }

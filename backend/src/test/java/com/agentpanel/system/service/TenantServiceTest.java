@@ -1,5 +1,6 @@
 package com.agentpanel.system.service;
 
+import com.agentpanel.application.service.KanbanBoardInitializer;
 import com.agentpanel.common.BusinessException;
 import com.agentpanel.system.dto.TenantDto;
 import com.agentpanel.system.entity.SysTenant;
@@ -21,6 +22,9 @@ class TenantServiceTest {
 
     @Mock
     private SysTenantRepository tenantRepository;
+
+    @Mock
+    private KanbanBoardInitializer kanbanBoardInitializer;
 
     @InjectMocks
     private TenantService tenantService;

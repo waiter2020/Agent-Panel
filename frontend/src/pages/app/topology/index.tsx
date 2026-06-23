@@ -3,8 +3,8 @@ import { ModalForm, ProForm, ProFormSelect, ProFormText, ProFormTextArea } from 
 import {
   Alert, Button, Card, Descriptions, Drawer, Modal, Popconfirm, Space, Table, Tabs, Tag, Timeline, Typography, Upload, message,
 } from 'antd';
-import { useRef, useState } from 'react';
-import { useAccess } from '@umijs/max';
+import { useRef, useState, useEffect } from 'react';
+import { useAccess, history, useSearchParams } from '@umijs/max';
 import {
   addTopologyLink,
   addTopologyNode,
@@ -20,6 +20,7 @@ import {
 import { listApps } from '@/services/app';
 import { listDelegations, recordDelegation } from '@/services/delegation';
 import { createSkill, deleteSkill, downloadSkill, listSkills, notifyTopologySkillsReload } from '@/services/skill';
+import type { TopologyDto } from '@/services/types/topology';
 
 const statusMap: Record<string, { text: string; color: string }> = {
   draft: { text: '草稿', color: 'default' },
@@ -110,32 +111,34 @@ export default () => {
   const [memberOpen, setMemberOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [currentTopology, setCurrentTopology] = useState<any>(null);
-  const [detailTopology, setDetailTopology] = useState<any>(null);
+  const [currentTopology, setCurrentTopology] = useState<TopologyDto | null>(null);
+  const [detailTopology, setDetailTopology] = useState<TopologyDto | null>(null);
   const [apps, setApps] = useState<any[]>([]);
   const [deployKey, setDeployKey] = useState<string | null>(null);
-  const [deploySummary, setDeploySummary] = useState<any>(null);
+  const [deploySummary, setDeploySummary] = useState<TopologyDto | null>(null);
   const [delegations, setDelegations] = useState<any[]>([]);
   const [skills, setSkills] = useState<any[]>([]);
   const [delegationOpen, setDelegationOpen] = useState(false);
   const [skillOpen, setSkillOpen] = useState(false);
   const [detailTab, setDetailTab] = useState('overview');
+  const [searchParams] = useSearchParams();
 
   const loadApps = async () => {
     const data = await listApps();
     setApps(data.filter((a: any) => ['running', 'created', 'stopped'].includes(a.status)));
   };
 
-  const openDetail = async (record: any) => {
+  const openDetail = async (record: { id: number }, initialTab?: string) => {
     const detail = await getTopology(record.id);
     setDetailTopology(detail);
-    setDetailTab('overview');
+    const validTabs = ['overview', 'delegations', 'skills'];
+    setDetailTab(initialTab && validTabs.includes(initialTab) ? initialTab : 'overview');
     setDetailOpen(true);
     if (access.canViewDelegation) {
-      try { setDelegations(await listDelegations(record.id)); } catch { setDelegations([]); }
+      try { setDelegations(await listDelegations({ topologyId: record.id })); } catch { setDelegations([]); }
     }
     if (access.canViewSkill) {
-      try { setSkills(await listSkills(record.id)); } catch { setSkills([]); }
+      try { setSkills(await listSkills({ topologyId: record.id })); } catch { setSkills([]); }
     }
   };
 
@@ -144,12 +147,20 @@ export default () => {
     setDetailTopology(detail);
     actionRef.current?.reload();
     if (access.canViewDelegation) {
-      try { setDelegations(await listDelegations(id)); } catch { /* ignore */ }
+      try { setDelegations(await listDelegations({ topologyId: id })); } catch { /* ignore */ }
     }
     if (access.canViewSkill) {
-      try { setSkills(await listSkills(id)); } catch { /* ignore */ }
+      try { setSkills(await listSkills({ topologyId: id })); } catch { /* ignore */ }
     }
   };
+
+  useEffect(() => {
+    const topologyIdParam = searchParams.get('topologyId');
+    if (!topologyIdParam) return;
+    const id = Number(topologyIdParam);
+    if (Number.isNaN(id)) return;
+    openDetail({ id }, searchParams.get('tab') || undefined);
+  }, [searchParams]);
 
   const nodeOptions = (detailTopology?.nodes || []).map((n: any) => ({
     label: `${n.applicationName} (${n.role})`,
@@ -353,6 +364,14 @@ export default () => {
                       { title: '端口', dataIndex: 'name' },
                       { title: '外部访问', dataIndex: 'url', ellipsis: true },
                       { title: '集群内互访', dataIndex: 'peerUrl', ellipsis: true },
+                      {
+                        title: '控制台',
+                        render: (_, r) => (
+                          <a onClick={() => history.push(`/app/detail/${r.applicationId}?tab=webConsole:${r.name}`)}>
+                            打开 {r.name}
+                          </a>
+                        ),
+                      },
                     ]}
                   />
                 </Card>
@@ -413,6 +432,22 @@ export default () => {
                           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                             {d.startedAt ? new Date(d.startedAt).toLocaleString() : ''}
                             {d.completedAt ? ` · 完成 ${new Date(d.completedAt).toLocaleString()}` : ''}
+                            {d.parentAppId && (
+                              <>
+                                {' · '}
+                                <a onClick={() => history.push(`/app/detail/${d.parentAppId}?tab=delegation`)}>
+                                  {d.parentAppName || `父应用 #${d.parentAppId}`}
+                                </a>
+                              </>
+                            )}
+                            {d.childAppId && (
+                              <>
+                                {' · '}
+                                <a onClick={() => history.push(`/app/detail/${d.childAppId}?tab=delegation`)}>
+                                  {d.childAppName || `子应用 #${d.childAppId}`}
+                                </a>
+                              </>
+                            )}
                           </Typography.Text>
                         </div>
                       ),
@@ -455,7 +490,11 @@ export default () => {
                     columns={[
                       { title: '名称', dataIndex: 'name' },
                       { title: '描述', dataIndex: 'description', ellipsis: true },
-                      { title: '来源应用', dataIndex: 'applicationName', render: (v) => v || '-' },
+                      { title: '来源应用', dataIndex: 'applicationName', render: (v, record) => (
+                        record.applicationId
+                          ? <a onClick={() => history.push(`/app/detail/${record.applicationId}?tab=skills`)}>{v || `#${record.applicationId}`}</a>
+                          : (v || '拓扑共享')
+                      ) },
                       { title: '文件', dataIndex: 'filePath', ellipsis: true, render: (v) => v || '-' },
                       {
                         title: '操作',
@@ -470,7 +509,7 @@ export default () => {
                             <Popconfirm key="del" title="确认删除？" onConfirm={async () => {
                               await deleteSkill(record.id);
                               message.success('已删除');
-                              setSkills(await listSkills(detailTopology.id));
+                              setSkills(await listSkills({ topologyId: detailTopology.id }));
                             }}>
                               <a style={{ color: 'red', marginLeft: 8 }}>删除</a>
                             </Popconfirm>
@@ -563,7 +602,7 @@ export default () => {
             result: values.result ? { note: values.result } : {},
           });
           message.success('委派已记录');
-          setDelegations(await listDelegations(detailTopology.id));
+          setDelegations(await listDelegations({ topologyId: detailTopology.id }));
           return true;
         }}
       >
@@ -617,7 +656,7 @@ export default () => {
             applicationId: values.applicationId,
           }, file);
           message.success('技能已保存');
-          setSkills(await listSkills(detailTopology.id));
+          setSkills(await listSkills({ topologyId: detailTopology.id }));
           return true;
         }}
       >
@@ -678,6 +717,14 @@ export default () => {
                     { title: '应用', dataIndex: 'applicationName' },
                     { title: '外部', dataIndex: 'url' },
                     { title: '集群内', dataIndex: 'peerUrl' },
+                    {
+                      title: '控制台',
+                      render: (_, r) => (
+                        <a onClick={() => { setDeploySummary(null); history.push(`/app/detail/${r.applicationId}?tab=webConsole:${r.name}`); }}>
+                          打开 {r.name}
+                        </a>
+                      ),
+                    },
                   ]}
                 />
               </>

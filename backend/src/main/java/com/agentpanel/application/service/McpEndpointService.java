@@ -7,7 +7,9 @@ import com.agentpanel.application.entity.Application;
 import com.agentpanel.application.entity.McpEndpoint;
 import com.agentpanel.application.repository.ApplicationRepository;
 import com.agentpanel.application.repository.McpEndpointRepository;
+import com.agentpanel.auth.SecurityUtils;
 import com.agentpanel.common.BusinessException;
+import com.agentpanel.common.TenantAccessHelper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -53,6 +55,7 @@ public class McpEndpointService {
 
     public List<McpEndpointDto> listAll() {
         return mcpEndpointRepository.findAll().stream()
+                .filter(endpoint -> canAccessApplication(endpoint.getApplicationId()))
                 .map(this::toDto)
                 .toList();
     }
@@ -91,9 +94,7 @@ public class McpEndpointService {
 
     @Transactional
     public void delete(Long id) {
-        if (!mcpEndpointRepository.existsById(id)) {
-            throw new BusinessException("MCP 端点不存在");
-        }
+        findEndpoint(id);
         mcpEndpointRepository.deleteById(id);
     }
 
@@ -325,13 +326,24 @@ public class McpEndpointService {
     }
 
     private McpEndpoint findEndpoint(Long id) {
-        return mcpEndpointRepository.findById(id)
+        McpEndpoint endpoint = mcpEndpointRepository.findById(id)
                 .orElseThrow(() -> new BusinessException("MCP 端点不存在"));
+        ensureApplication(endpoint.getApplicationId());
+        return endpoint;
     }
 
-    private void ensureApplication(Long applicationId) {
-        applicationRepository.findByIdAndDeletedFalse(applicationId)
+    private Application ensureApplication(Long applicationId) {
+        Application app = applicationRepository.findByIdAndDeletedFalse(applicationId)
                 .orElseThrow(() -> new BusinessException("应用不存在"));
+        TenantAccessHelper.requireOwnedTenant(app.getTenantId(), "应用不存在");
+        return app;
+    }
+
+    private boolean canAccessApplication(Long applicationId) {
+        return applicationRepository.findByIdAndDeletedFalse(applicationId)
+                .filter(app -> SecurityUtils.isSuperAdmin()
+                        || SecurityUtils.getCurrentTenantId().equals(app.getTenantId()))
+                .isPresent();
     }
 
     private McpEndpointDto toDto(McpEndpoint endpoint) {

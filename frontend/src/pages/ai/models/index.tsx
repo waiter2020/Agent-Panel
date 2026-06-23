@@ -1,5 +1,6 @@
 import { PageContainer, ProTable, ModalForm, ProFormText, ProFormSelect, ProFormSwitch } from '@ant-design/pro-components';
 import { Button, message, Table } from 'antd';
+import { Link } from '@umijs/max';
 import { createProvider, deleteProvider, listProviders, listModels, createModel, updateModel, deleteModel } from '@/services/ai';
 import { useRef, useState } from 'react';
 
@@ -17,7 +18,10 @@ export default () => {
   };
 
   return (
-    <PageContainer title="模型配置">
+    <PageContainer
+      title="模型配置"
+      extra={<Link to="/ai/playground">前往对话调试</Link>}
+    >
       <ProTable
         actionRef={actionRef}
         rowKey="id"
@@ -47,6 +51,13 @@ export default () => {
                   title: '操作',
                   render: (_, record) => [
                     <a key="edit" onClick={() => { setCurrentModel(record); setModelOpen(true); }}>编辑</a>,
+                    <Link
+                      key="play"
+                      to={`/ai/playground?provider=${currentProvider?.id}&model=${encodeURIComponent(record.model)}`}
+                      style={{ marginLeft: 8 }}
+                    >
+                      去调试
+                    </Link>,
                     <a key="del" style={{ marginLeft: 8 }} onClick={async () => {
                       await deleteModel(record.id);
                       message.success('已删除');

@@ -1,8 +1,11 @@
 package com.agentpanel.memory.service;
 
+import com.agentpanel.application.entity.AgentTopology;
+import com.agentpanel.application.entity.Application;
 import com.agentpanel.application.repository.AgentTopologyRepository;
 import com.agentpanel.application.repository.ApplicationRepository;
 import com.agentpanel.common.BusinessException;
+import com.agentpanel.common.TenantAccessHelper;
 import com.agentpanel.memory.dto.DelegationTraceDto;
 import com.agentpanel.memory.dto.RecordDelegationRequest;
 import com.agentpanel.memory.dto.UpdateDelegationRequest;
@@ -38,12 +41,9 @@ public class DelegationTraceService {
         if (request.getTaskSummary() == null || request.getTaskSummary().isBlank()) {
             throw new BusinessException("任务摘要不能为空");
         }
-        topologyRepository.findByIdAndDeletedFalse(request.getTopologyId())
-                .orElseThrow(() -> new BusinessException("拓扑不存在"));
-        applicationRepository.findByIdAndDeletedFalse(request.getParentAppId())
-                .orElseThrow(() -> new BusinessException("父应用不存在"));
-        applicationRepository.findByIdAndDeletedFalse(request.getChildAppId())
-                .orElseThrow(() -> new BusinessException("子应用不存在"));
+        AgentTopology topology = requireTopology(request.getTopologyId());
+        requireApplicationInTenant(request.getParentAppId(), topology.getTenantId(), "父应用不存在");
+        requireApplicationInTenant(request.getChildAppId(), topology.getTenantId(), "子应用不存在");
 
         DelegationTrace trace = new DelegationTrace();
         trace.setTopologyId(request.getTopologyId());
@@ -60,10 +60,24 @@ public class DelegationTraceService {
         return toDto(delegationTraceRepository.save(trace));
     }
 
-    public List<DelegationTraceDto> listByTopology(Long topologyId) {
-        topologyRepository.findByIdAndDeletedFalse(topologyId)
-                .orElseThrow(() -> new BusinessException("拓扑不存在"));
-        return delegationTraceRepository.findByTopologyIdOrderByStartedAtDesc(topologyId).stream()
+    public List<DelegationTraceDto> list(Long topologyId, Long applicationId) {
+        if (topologyId == null && applicationId == null) {
+            throw new BusinessException("请指定 topologyId 或 applicationId");
+        }
+        if (topologyId != null) {
+            AgentTopology topology = requireTopology(topologyId);
+            List<DelegationTrace> traces = delegationTraceRepository.findByTopologyIdOrderByStartedAtDesc(topologyId);
+            if (applicationId != null) {
+                requireApplicationInTenant(applicationId, topology.getTenantId(), "应用不存在");
+                traces = traces.stream()
+                        .filter(trace -> applicationId.equals(trace.getParentAppId())
+                                || applicationId.equals(trace.getChildAppId()))
+                        .toList();
+            }
+            return traces.stream().map(this::toDto).toList();
+        }
+        requireApplication(applicationId, "应用不存在");
+        return delegationTraceRepository.findByParentAppIdOrChildAppIdOrderByStartedAtDesc(applicationId, applicationId).stream()
                 .map(this::toDto)
                 .toList();
     }
@@ -72,6 +86,7 @@ public class DelegationTraceService {
     public DelegationTraceDto update(Long id, UpdateDelegationRequest request) {
         DelegationTrace trace = delegationTraceRepository.findById(id)
                 .orElseThrow(() -> new BusinessException("委派记录不存在"));
+        requireTopology(trace.getTopologyId());
         if (request.getStatus() != null && !request.getStatus().isBlank()) {
             trace.setStatus(normalizeStatus(request.getStatus()));
         }
@@ -99,6 +114,27 @@ public class DelegationTraceService {
 
     private boolean isTerminal(String status) {
         return "completed".equals(status) || "failed".equals(status) || "cancelled".equals(status);
+    }
+
+    private AgentTopology requireTopology(Long topologyId) {
+        AgentTopology topology = topologyRepository.findByIdAndDeletedFalse(topologyId)
+                .orElseThrow(() -> new BusinessException("拓扑不存在"));
+        TenantAccessHelper.requireOwnedTenant(topology.getTenantId(), "拓扑不存在");
+        return topology;
+    }
+
+    private Application requireApplication(Long applicationId, String message) {
+        Application app = applicationRepository.findByIdAndDeletedFalse(applicationId)
+                .orElseThrow(() -> new BusinessException(message));
+        TenantAccessHelper.requireOwnedTenant(app.getTenantId(), message);
+        return app;
+    }
+
+    private void requireApplicationInTenant(Long applicationId, Long tenantId, String message) {
+        Application app = requireApplication(applicationId, message);
+        if (tenantId == null || !tenantId.equals(app.getTenantId())) {
+            throw new BusinessException(message);
+        }
     }
 
     private DelegationTraceDto toDto(DelegationTrace trace) {

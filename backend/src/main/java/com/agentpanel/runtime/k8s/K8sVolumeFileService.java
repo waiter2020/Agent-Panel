@@ -116,6 +116,58 @@ public class K8sVolumeFileService {
         }
     }
 
+    public void writeText(RuntimeRef ref, String containerMountPath, String relativePath, String content) {
+        String targetPath = joinContainerPath(containerMountPath, relativePath);
+        validateContainerPath(targetPath);
+        try (KubernetesClient client = client()) {
+            PodResource pod = resolveRunningPod(client, ref);
+            String parent = parentPath(targetPath);
+            if (!execTest(pod, "-d", parent)) {
+                execCapture(pod, "sh", "-c", "mkdir -p " + shellQuote(parent));
+            }
+            try (InputStream input = new java.io.ByteArrayInputStream(
+                    (content == null ? "" : content).getBytes(StandardCharsets.UTF_8))) {
+                pod.file(targetPath).upload(input);
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("写入失败: " + e.getMessage());
+        }
+    }
+
+    public void mkdir(RuntimeRef ref, String containerMountPath, String relativePath) {
+        String targetPath = joinContainerPath(containerMountPath, relativePath);
+        validateContainerPath(targetPath);
+        try (KubernetesClient client = client()) {
+            PodResource pod = resolveRunningPod(client, ref);
+            execCapture(pod, "sh", "-c", "mkdir -p " + shellQuote(targetPath));
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("创建目录失败: " + e.getMessage());
+        }
+    }
+
+    public void rename(RuntimeRef ref, String containerMountPath, String relativePath, String newName) {
+        String sourcePath = joinContainerPath(containerMountPath, relativePath);
+        validateContainerPath(sourcePath);
+        String parent = parentPath(sourcePath);
+        String targetPath = parent + "/" + newName;
+        validateContainerPath(targetPath);
+        try (KubernetesClient client = client()) {
+            PodResource pod = resolveRunningPod(client, ref);
+            if (!execTest(pod, "-e", sourcePath)) {
+                throw new BusinessException("文件不存在");
+            }
+            execCapture(pod, "sh", "-c", "mv " + shellQuote(sourcePath) + " " + shellQuote(targetPath));
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("重命名失败: " + e.getMessage());
+        }
+    }
+
     private PodResource resolveRunningPod(KubernetesClient client, RuntimeRef ref) {
         String namespace = ref.namespace() != null ? ref.namespace() : properties.getK8s().getNamespace();
         var pods = client.pods().inNamespace(namespace).withLabel("app", ref.ref()).list();

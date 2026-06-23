@@ -7,6 +7,7 @@ import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -52,4 +53,8 @@ public class AgentTemplate extends BaseEntity {
 
     @Column(name = "doc_url")
     private String docUrl;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "management_schema", nullable = false)
+    private Map<String, Object> managementSchema = new HashMap<>();
 }

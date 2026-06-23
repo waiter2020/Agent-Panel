@@ -32,7 +32,8 @@
 
 - [ ] **Provider 选择**：生产优先 `runtimeProvider: k8s`，避免挂载 **docker.sock**
 - [ ] **若必须使用 Docker**：限制宿主机访问、使用 rootless Docker 或专用节点；面板进程非 root
-- [ ] **RBAC**：K8s 模式确认 `agentpanel-apps` 命名空间 Role 最小权限（仅 deployments/services/pods 等必需资源）
+- [ ] **RBAC**：K8s 模式确认 `agentpanel-apps` 命名空间 Role 最小权限（仅 deployments/services/pods 等必需资源）；并绑定 ClusterRole `agent-panel-metrics-reader`（`metrics.k8s.io` + `nodes/proxy`），否则 CPU/内存与网络监控不可用
+- [ ] **metrics-server**：集群已安装 metrics-server；`kubectl top pods -n agentpanel-apps` 可返回数据
 - [ ] **镜像拉取**：配置 `imagePullSecrets` 与私有镜像仓库扫描
 - [ ] **资源限制**：为面板与 Agent 工作负载设置 `resources.requests/limits`
 

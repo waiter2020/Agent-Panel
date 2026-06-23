@@ -1,5 +1,6 @@
 package com.agentpanel.runtime.k8s;
 
+import com.agentpanel.application.service.OpenClawGatewayBootstrapService;
 import com.agentpanel.common.BusinessException;
 import com.agentpanel.config.AgentRuntimeProperties;
 import com.agentpanel.runtime.api.*;
@@ -27,6 +28,8 @@ import java.util.stream.Collectors;
 public class K8sRuntimeProvider implements AgentRuntimeProvider {
 
     private final AgentRuntimeProperties properties;
+    private final KubeletStatsHelper kubeletStatsHelper;
+    private final OpenClawGatewayBootstrapService openClawGatewayBootstrapService;
 
     private KubernetesClient client() {
         if (properties.getK8s().isInCluster()) {
@@ -75,14 +78,23 @@ public class K8sRuntimeProvider implements AgentRuntimeProvider {
                     .collect(Collectors.toList());
             List<Volume> volumes = spec.volumes().stream()
                     .map(v -> buildVolume(client, namespace, name, v))
-                    .collect(Collectors.toList());
+                    .collect(Collectors.toCollection(ArrayList::new));
+            List<Container> initContainers = new ArrayList<>();
+            applyOpenClawK8sBootstrap(client, namespace, spec, name, volumes, initContainers);
             var containerBuilder = new io.fabric8.kubernetes.api.model.ContainerBuilder()
                     .withName(name)
                     .withImage(spec.fullImage())
                     .withPorts(containerPorts)
                     .withEnv(envVars)
                     .withVolumeMounts(volumeMounts);
+            applyOpenClawStartupArgs(containerBuilder, spec);
             applyResourceLimits(containerBuilder, spec.resources());
+            var podSpecBuilder = new PodSpecBuilder()
+                    .withContainers(containerBuilder.build())
+                    .withVolumes(volumes);
+            if (!initContainers.isEmpty()) {
+                podSpecBuilder.withInitContainers(initContainers);
+            }
             Deployment deployment = new DeploymentBuilder()
                     .withNewMetadata().withName(name).withNamespace(namespace)
                     .addToLabels("app", name)
@@ -93,10 +105,7 @@ public class K8sRuntimeProvider implements AgentRuntimeProvider {
                     .withNewSelector().addToMatchLabels("app", name).endSelector()
                     .withNewTemplate()
                     .withNewMetadata().addToLabels("app", name).endMetadata()
-                    .withNewSpec()
-                    .withContainers(containerBuilder.build())
-                    .withVolumes(volumes)
-                    .endSpec()
+                    .withSpec(podSpecBuilder.build())
                     .endTemplate()
                     .endSpec()
                     .build();
@@ -209,38 +218,85 @@ public class K8sRuntimeProvider implements AgentRuntimeProvider {
             if (pods.getItems().isEmpty()) {
                 return ResourceStats.unavailable("未找到运行中的 Pod");
             }
-            String podName = pods.getItems().get(0).getMetadata().getName();
+            Pod pod = pods.getItems().get(0);
+            String podName = pod.getMetadata().getName();
             long memLimitBytes = 0;
-            var pod = pods.getItems().get(0);
+            long cpuLimitNano = 0;
             if (pod.getSpec() != null && pod.getSpec().getContainers() != null
                     && !pod.getSpec().getContainers().isEmpty()) {
-                var limits = pod.getSpec().getContainers().get(0).getResources();
-                if (limits != null && limits.getLimits() != null && limits.getLimits().get("memory") != null) {
-                    memLimitBytes = parseQuantity(limits.getLimits().get("memory"));
+                var resources = pod.getSpec().getContainers().get(0).getResources();
+                if (resources != null && resources.getLimits() != null) {
+                    if (resources.getLimits().get("memory") != null) {
+                        memLimitBytes = parseQuantity(resources.getLimits().get("memory"));
+                    }
+                    if (resources.getLimits().get("cpu") != null) {
+                        cpuLimitNano = parseCpuLimitNano(resources.getLimits().get("cpu"));
+                    }
                 }
             }
-            var metrics = client.top().pods().metrics(ref.namespace());
+            io.fabric8.kubernetes.api.model.metrics.v1beta1.PodMetricsList metrics;
+            try {
+                metrics = client.top().pods().metrics(ref.namespace());
+            } catch (Exception e) {
+                return ResourceStats.unavailable(classifyMetricsError(e));
+            }
             if (metrics == null || metrics.getItems() == null || metrics.getItems().isEmpty()) {
-                return ResourceStats.unavailable("metrics-server 不可用，请安装 metrics-server");
+                return ResourceStats.unavailable("metrics-server 未安装或未就绪，请安装 metrics-server");
             }
             for (var item : metrics.getItems()) {
                 if (podName.equals(item.getMetadata().getName()) && !item.getContainers().isEmpty()) {
                     var usage = item.getContainers().get(0).getUsage();
                     long cpuNano = parseQuantity(usage.get("cpu"));
                     long memBytes = parseQuantity(usage.get("memory"));
-                    double cpuPercent = cpuNano / 10_000_000.0;
-                    return ResourceStats.ok(cpuPercent, memBytes, memLimitBytes, 0, 0);
+                    double cpuPercent = cpuLimitNano > 0
+                            ? (double) cpuNano / cpuLimitNano * 100.0
+                            : cpuNano / 10_000_000.0;
+                    var network = kubeletStatsHelper.fetchPodNetwork(client, pod);
+                    return ResourceStats.ok(cpuPercent, memBytes, memLimitBytes,
+                            network.rxBytes(), network.txBytes(), network.available());
                 }
             }
             return ResourceStats.unavailable("未找到 Pod 指标数据");
         } catch (Exception e) {
             log.warn("K8s stats 采集失败 deployment={} namespace={}: {}", ref.ref(), ref.namespace(), e.getMessage());
-            return ResourceStats.unavailable("K8s stats 采集失败: " + e.getMessage());
+            return ResourceStats.unavailable("K8s stats 采集失败: " + classifyMetricsError(e));
+        }
+    }
+
+    private String classifyMetricsError(Exception e) {
+        String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        if (msg.contains("403") || msg.contains("Forbidden")) {
+            return "metrics-server RBAC 不足，请为 agent-panel SA 授权 metrics.k8s.io";
+        }
+        if (msg.contains("404") || msg.contains("Connection refused") || msg.contains("no metrics")) {
+            return "metrics-server 未安装或未就绪，请安装 metrics-server";
+        }
+        return msg;
+    }
+
+    private long parseCpuLimitNano(io.fabric8.kubernetes.api.model.Quantity quantity) {
+        if (quantity == null || quantity.getAmount() == null) {
+            return 0;
+        }
+        String amount = quantity.getAmount();
+        String format = quantity.getFormat();
+        try {
+            if ("n".equals(format)) {
+                return Long.parseLong(amount);
+            }
+            if (amount.endsWith("m")) {
+                return Long.parseLong(amount.substring(0, amount.length() - 1)) * 1_000_000L;
+            }
+            double cores = Double.parseDouble(amount);
+            return (long) (cores * 1_000_000_000L);
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 
     public TerminalSession openTerminal(RuntimeRef ref, TerminalOutputHandler handler) {
-        try (KubernetesClient client = client()) {
+        KubernetesClient client = client();
+        try {
             var pods = client.pods().inNamespace(ref.namespace()).withLabel("app", ref.ref()).list();
             if (pods.getItems().isEmpty()) {
                 throw new BusinessException("未找到运行中的 Pod");
@@ -252,10 +308,12 @@ public class K8sRuntimeProvider implements AgentRuntimeProvider {
                     .redirectingInput()
                     .withTTY()
                     .exec("sh", "-i");
-            return new K8sTerminalSession(execWatch, handler);
+            return new K8sTerminalSession(client, execWatch, handler);
         } catch (BusinessException e) {
+            client.close();
             throw e;
         } catch (Exception e) {
+            client.close();
             throw new BusinessException("打开 K8s 终端失败: " + e.getMessage());
         }
     }
@@ -471,5 +529,69 @@ public class K8sRuntimeProvider implements AgentRuntimeProvider {
             resolved.add(new PortMapping(port.name(), port.containerPort(), nodePort, port.protocol(), port.expose()));
         }
         return resolved;
+    }
+
+    private boolean isOpenClaw(DeploySpec spec) {
+        if (spec.labels() == null) {
+            return false;
+        }
+        return OpenClawGatewayBootstrapService.OPENCLAW_TEMPLATE_CODE
+                .equals(spec.labels().get("agentpanel.template"));
+    }
+
+    private void applyOpenClawStartupArgs(io.fabric8.kubernetes.api.model.ContainerBuilder containerBuilder, DeploySpec spec) {
+        Map<String, String> merged = new LinkedHashMap<>();
+        if (spec.env() != null) {
+            merged.putAll(spec.env());
+        }
+        if (spec.secretEnv() != null) {
+            merged.putAll(spec.secretEnv());
+        }
+        boolean allowUnconfigured = "true".equalsIgnoreCase(merged.get("OPENCLAW_ALLOW_UNCONFIGURED"))
+                || "local".equalsIgnoreCase(merged.get("OPENCLAW_GATEWAY_MODE"));
+        if (!isOpenClaw(spec) || !allowUnconfigured) {
+            return;
+        }
+        containerBuilder.withCommand("node", "openclaw.mjs", "gateway", "--allow-unconfigured");
+    }
+
+    private void applyOpenClawK8sBootstrap(KubernetesClient client, String namespace, DeploySpec spec, String name,
+                                           List<Volume> volumes, List<Container> initContainers) {
+        if (!isOpenClaw(spec) || spec.volumes() == null || spec.volumes().isEmpty()) {
+            return;
+        }
+        com.agentpanel.runtime.api.VolumeMount dataVolume = spec.volumes().getFirst();
+        String configMapName = openClawGatewayBootstrapService.k8sConfigMapName(name);
+        String bootstrapJson = openClawGatewayBootstrapService.buildBootstrapJson("k8s");
+        ConfigMap configMap = new ConfigMapBuilder()
+                .withNewMetadata().withName(configMapName).withNamespace(namespace).endMetadata()
+                .addToData(OpenClawGatewayBootstrapService.OPENCLAW_CONFIG_FILE, bootstrapJson)
+                .build();
+        client.resource(configMap).inNamespace(namespace).serverSideApply();
+
+        volumes.add(new VolumeBuilder()
+                .withName("openclaw-bootstrap")
+                .withNewConfigMap().withName(configMapName).endConfigMap()
+                .build());
+
+        String mountPath = dataVolume.containerPath();
+        String configPath = mountPath.endsWith("/")
+                ? mountPath + OpenClawGatewayBootstrapService.OPENCLAW_CONFIG_FILE
+                : mountPath + "/" + OpenClawGatewayBootstrapService.OPENCLAW_CONFIG_FILE;
+        String mergeScript = """
+                node -e "const fs=require('fs');const path='%s';const boot=JSON.parse(fs.readFileSync('/bootstrap/%s','utf8'));let cur={};try{if(fs.existsSync(path))cur=JSON.parse(fs.readFileSync(path,'utf8'));}catch(e){}function merge(t,p){for(const[k,v]of Object.entries(p)){if(v&&typeof v==='object'&&!Array.isArray(v)&&t[k]&&typeof t[k]==='object')merge(t[k],v);else t[k]=v;}}merge(cur,boot);fs.mkdirSync('%s',{recursive:true});fs.writeFileSync(path,JSON.stringify(cur,null,2));"
+                """.formatted(
+                configPath.replace("'", "\\'"),
+                OpenClawGatewayBootstrapService.OPENCLAW_CONFIG_FILE,
+                mountPath.replace("'", "\\'"));
+
+        initContainers.add(new ContainerBuilder()
+                .withName("openclaw-bootstrap")
+                .withImage(spec.fullImage())
+                .withCommand("sh", "-c", mergeScript)
+                .withVolumeMounts(
+                        new VolumeMountBuilder().withName(dataVolume.name()).withMountPath(mountPath).build(),
+                        new VolumeMountBuilder().withName("openclaw-bootstrap").withMountPath("/bootstrap").build())
+                .build());
     }
 }

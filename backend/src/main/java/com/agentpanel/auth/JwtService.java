@@ -67,10 +67,29 @@ public class JwtService {
         return Jwts.builder()
                 .subject(String.valueOf(user.getId()))
                 .claim("username", user.getUsername())
+                .claim("tenantId", user.getTenantId() != null ? user.getTenantId() : 1L)
                 .claim("permissions", permissions)
                 .claim("type", "sse")
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(Duration.ofMinutes(5))))
+                .signWith(key)
+                .compact();
+    }
+
+    public String generateProxyToken(SysUser user, List<String> roles, List<String> permissions,
+                                     Long appId, Long tenantId, String consoleKey) {
+        Instant now = Instant.now();
+        return Jwts.builder()
+                .subject(String.valueOf(user.getId()))
+                .claim("username", user.getUsername())
+                .claim("tenantId", tenantId != null ? tenantId : 1L)
+                .claim("roles", roles)
+                .claim("permissions", permissions)
+                .claim("type", "proxy")
+                .claim("appId", appId)
+                .claim("consoleKey", consoleKey)
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plus(Duration.ofMinutes(10))))
                 .signWith(key)
                 .compact();
     }

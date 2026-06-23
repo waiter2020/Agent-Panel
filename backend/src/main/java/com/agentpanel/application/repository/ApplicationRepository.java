@@ -11,5 +11,5 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
     List<Application> findByDeletedFalseAndTenantIdOrderByUpdatedAtDesc(Long tenantId);
     List<Application> findByDeletedFalseAndRuntimeRefIsNotNull();
     Optional<Application> findByIdAndDeletedFalse(Long id);
-    boolean existsByNameAndDeletedFalse(String name);
+    boolean existsByNameAndTenantIdAndDeletedFalse(String name, Long tenantId);
 }

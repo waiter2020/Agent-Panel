@@ -1,5 +1,6 @@
 import { ProForm, ProFormDigit, ProFormSelect, ProFormText, ProFormTextArea } from '@ant-design/pro-components';
 import { Card, message } from 'antd';
+import { useEffect } from 'react';
 import { updateApp } from '@/services/app';
 
 type Props = {
@@ -8,19 +9,33 @@ type Props = {
   onSaved: () => void;
 };
 
+function buildInitialValues(app: any) {
+  return {
+    image: app?.image,
+    tag: app?.tag,
+    remark: app?.remark,
+    replicas: app?.replicas || 1,
+    runtimeProvider: app?.runtimeProvider || 'docker',
+    cpu: app?.resources?.cpu || '1',
+    memory: app?.resources?.memory || '1Gi',
+  };
+}
+
 export default function AppConfigPanel({ appId, app, onSaved }: Props) {
+  const [form] = ProForm.useForm();
+
+  useEffect(() => {
+    if (app) {
+      form.setFieldsValue(buildInitialValues(app));
+    }
+  }, [app, appId, form]);
+
   return (
     <Card title="Agent 配置">
       <ProForm
-        initialValues={{
-          image: app?.image,
-          tag: app?.tag,
-          remark: app?.remark,
-          replicas: app?.replicas || 1,
-          runtimeProvider: app?.runtimeProvider || 'docker',
-          cpu: app?.resources?.cpu || '1',
-          memory: app?.resources?.memory || '1Gi',
-        }}
+        form={form}
+        key={appId}
+        initialValues={buildInitialValues(app)}
         onFinish={async (values) => {
           await updateApp(appId, {
             image: values.image,

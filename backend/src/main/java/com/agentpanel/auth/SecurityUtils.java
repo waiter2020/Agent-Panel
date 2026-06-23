@@ -1,5 +1,6 @@
 package com.agentpanel.auth;
 
+import com.agentpanel.common.TenantAccessHelper;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -44,8 +45,14 @@ public final class SecurityUtils {
         if (auth == null || auth.getPrincipal() == null) {
             return 1L;
         }
-        if (auth.getPrincipal() instanceof AuthPrincipal principal && principal.tenantId() != null) {
-            return principal.tenantId();
+        if (auth.getPrincipal() instanceof AuthPrincipal principal) {
+            if (principal.tenantId() != null) {
+                return principal.tenantId();
+            }
+            if (isSuperAdmin()) {
+                return 1L;
+            }
+            return TenantAccessHelper.requireResolvableTenantId();
         }
         return 1L;
     }

@@ -33,11 +33,18 @@ export async function refreshAccessToken(refreshToken: string) {
   return res.data;
 }
 
-export async function getSseTicket() {
+export async function getSseTicket(): Promise<{ token: string }> {
   const res = await request<API.ApiResponse<{ token: string }>>('/api/auth/sse-ticket', {
     method: 'POST',
   });
-  return res.data.token;
+  return res.data;
+}
+
+export async function establishProxySession(appId: number, consoleKey: string) {
+  await request('/api/auth/proxy-session', {
+    method: 'POST',
+    data: { appId, consoleKey },
+  });
 }
 
 export async function getCurrentUser(): Promise<API.CurrentUser> {

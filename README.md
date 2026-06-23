@@ -364,17 +364,43 @@ Chart 路径：`deploy/helm/agent-panel/`（含可选内嵌 postgres/minio、`ag
 1. **认证与 RBAC** - JWT 登录、用户/角色/菜单/权限、审计日志、API 密钥管理
 2. **应用中心** - 内置模板、应用 CRUD、部署/启停/重启/删除、部署后端口回写与访问地址展示
 3. **监控与日志** - SSE 推送 CPU/内存 stats 与日志流（支持 `since` 参数）
-4. **文件存储** - MinIO 对象存储浏览/预签名上传下载
+4. **文件存储** - MinIO 对象存储浏览/预签名上传下载；全局模式支持按应用（`apps/{id}/` 前缀）筛选
 5. **模型网关** - LLM Provider/模型 CRUD、Playground 对话调试、OpenAI 兼容 `/v1` 端点
 6. **系统设置** - 面板配置管理页面与 `GET/PUT /api/settings` API
 7. **协同拓扑** - 多 Agent 同网部署、共享推理网关、拓扑画布与链路注入（P9 阶段 A/B/C）
 8. **MCP 注册中心** - 按应用登记 MCP 端点与工具发现（P9 阶段 B/C）
 9. **共享记忆** - pgvector 向量检索与跨 Agent 记忆 API（P9 阶段 C）
-10. **委派追踪与共享技能** - 子智能体委派可视化、拓扑级技能文件共享（P9 阶段 C）
+10. **委派追踪与共享技能** - 子智能体委派可视化与状态更新（PATCH）、拓扑级技能文件共享（P9 阶段 C）
+11. **运维仪表盘** - `/dashboard` 聚合应用/拓扑/端口统计；`/app/ports` 端口占用全景（`GET /api/dashboard/stats`、`GET /api/apps/ports`）
+12. **运维 Kanban** - 按租户自动同步应用状态到看板列，支持手动同步与任务移动（`GET/POST /api/kanban/**`）
+13. **模板管理 Schema** - `agent_template.management_schema`（V16）驱动应用详情动态 Tab、文件配置与健康检查（openclaw / hermes / openclaude 内置种子）
+14. **应用健康检查** - 按模板 `healthCheck` 配置 HTTP 探测（`GET /api/apps/{id}/health`）
+15. **Agent Web 控制台代理** - iframe 嵌入内置控制台，反向代理重写路径（`POST /api/auth/proxy-session` + `/api/apps/{id}/proxy/{portRef}/**`）
+
+### 运维仪表盘与 Kanban
+
+- **仪表盘** `/dashboard`：应用总数、运行/停止/异常分布、模板与运行时统计、端口冲突数、拓扑概览、最近应用
+- **端口全景** `/app/ports`：各应用端口映射、对外暴露与访问 URL
+- **Kanban** `/app/kanban`：租户默认看板（待部署 / 部署中 / 运行中 / 已停止 / 异常）；`POST .../sync` 将应用状态同步到列；`POST .../tasks/{id}/move` 移动卡片（不反写应用状态）
+
+### 模板 management_schema
+
+内置模板通过 `management_schema` JSON 配置：
+
+- `tabs`：应用详情页 Tab 列表（如概览、Web 控制台、文件、监控等）
+- `webConsoles`：可代理的内置 Web UI（key、title、portRef）
+- `healthCheck`：健康探测（portRef、path）
+- `fileProfiles` / `capabilities`：文件浏览与能力声明
+
+应用详情页根据当前模板 schema 动态渲染 Tab；Web 控制台 Tab 先调用 `POST /api/auth/proxy-session` 建立 `AP_PROXY` Cookie，再 iframe 加载代理路径。
+
+### 多租户命名（V18）
+
+同一租户内应用名、拓扑名唯一（`(tenant_id, name)` 部分唯一索引）；不同租户可重名。新建租户时自动种子默认 Kanban 看板。
 
 ## 路线图（未来）
 
-- **P12+**：租户配额、MCP SSE 双向会话、Agent 推送通道增强
+- **P12+**：Kanban 双向状态同步、MCP SSE 双向会话、Agent 推送通道增强、租户配额
 
 ## 许可证
 

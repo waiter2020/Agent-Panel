@@ -46,4 +46,7 @@ public class ApiKey {
 
     @Column(nullable = false)
     private boolean deprecated = false;
+
+    @Column(name = "tenant_id", nullable = false)
+    private Long tenantId = 1L;
 }

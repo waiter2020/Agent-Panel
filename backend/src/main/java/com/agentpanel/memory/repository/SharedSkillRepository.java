@@ -10,6 +10,10 @@ public interface SharedSkillRepository extends JpaRepository<SharedSkill, Long> 
 
     List<SharedSkill> findByTopologyIdOrderByNameAsc(Long topologyId);
 
+    List<SharedSkill> findByApplicationIdOrderByNameAsc(Long applicationId);
+
+    List<SharedSkill> findByTopologyIdAndApplicationIdOrderByNameAsc(Long topologyId, Long applicationId);
+
     Optional<SharedSkill> findByIdAndTopologyId(Long id, Long topologyId);
 
     boolean existsByTopologyIdAndName(Long topologyId, String name);

@@ -26,8 +26,10 @@ public class DelegationController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('delegation:read')")
-    public ApiResponse<List<DelegationTraceDto>> list(@RequestParam Long topologyId) {
-        return ApiResponse.ok(delegationTraceService.listByTopology(topologyId));
+    public ApiResponse<List<DelegationTraceDto>> list(
+            @RequestParam(required = false) Long topologyId,
+            @RequestParam(required = false) Long applicationId) {
+        return ApiResponse.ok(delegationTraceService.list(topologyId, applicationId));
     }
 
     @PatchMapping("/{id}")

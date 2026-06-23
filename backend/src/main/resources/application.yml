@@ -62,13 +62,24 @@ agent:
       volume-gid: ${AGENT_VOLUME_GID:1000}
       data-volume-name: ${AGENT_DATA_VOLUME_NAME:}
     k8s:
-      namespace: agentpanel-apps
+      namespace: ${K8S_APPS_NAMESPACE:agentpanel-apps}
       in-cluster: ${K8S_IN_CLUSTER:false}
       access-host: ${K8S_ACCESS_HOST:localhost}
+      storage-class: ${K8S_STORAGE_CLASS:}
+      volume-storage-size: ${K8S_VOLUME_STORAGE_SIZE:1Gi}
       expose-via-ingress: ${K8S_EXPOSE_VIA_INGRESS:false}
       ingress-host: ${K8S_INGRESS_HOST:agentpanel.local}
       ingress-class: ${K8S_INGRESS_CLASS:nginx}
       ingress-tls-secret: ${K8S_INGRESS_TLS_SECRET:}
+
+  openclaw:
+    user-header: ${OPENCLAW_PROXY_USER_HEADER:x-agentpanel-user}
+    proxy-marker-header: ${OPENCLAW_PROXY_MARKER_HEADER:x-agentpanel-proxy}
+    trusted-proxies:
+      - 172.17.0.0/16
+    k8s:
+      trusted-proxy-cidrs:
+        - 10.244.0.0/16
 
 storage:
   type: s3

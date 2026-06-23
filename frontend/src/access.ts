@@ -5,7 +5,7 @@ export default (initialState: { currentUser?: API.CurrentUser }) => {
   const has = (code: string) => permissions.includes(code);
 
   return {
-    canAccessDashboard: true,
+    canAccessDashboard: has('app:read'),
     canAccessSystem: has('system:user:read') || has('system:role:read') || has('system:menu:read')
       || has('system:apikey:read') || has('system:setting:read') || has('system:tenant:read'),
     canManageUser: has('system:user:read'),

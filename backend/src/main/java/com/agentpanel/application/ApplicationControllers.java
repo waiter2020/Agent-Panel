@@ -2,7 +2,9 @@ package com.agentpanel.application;
 
 import com.agentpanel.application.dto.ApplicationDto;
 import com.agentpanel.application.entity.AgentTemplate;
+import com.agentpanel.application.dto.AppHealthDto;
 import com.agentpanel.application.service.AppFileService;
+import com.agentpanel.application.service.AppHealthService;
 import com.agentpanel.application.service.ApplicationService;
 import com.agentpanel.common.ApiResponse;
 import com.agentpanel.runtime.api.LogOptions;
@@ -28,6 +30,7 @@ public class ApplicationControllers {
     private final ApplicationService applicationService;
     private final MonitorService monitorService;
     private final AppFileService appFileService;
+    private final AppHealthService appHealthService;
 
     @GetMapping("/api/templates")
     @PreAuthorize("hasAuthority('app:read')")
@@ -166,5 +169,48 @@ public class ApplicationControllers {
                                         @RequestParam String path) {
         appFileService.delete(id, volume, path);
         return ApiResponse.ok();
+    }
+
+    @GetMapping("/api/apps/{id}/files/text")
+    @PreAuthorize("hasAuthority('app:read')")
+    public ApiResponse<String> readText(@PathVariable Long id,
+                                        @RequestParam String volume,
+                                        @RequestParam String path) {
+        return ApiResponse.ok(appFileService.readText(id, volume, path));
+    }
+
+    @PutMapping("/api/apps/{id}/files/text")
+    @PreAuthorize("hasAuthority('app:write')")
+    public ApiResponse<Void> writeText(@PathVariable Long id,
+                                       @RequestParam String volume,
+                                       @RequestParam String path,
+                                       @RequestBody String content) {
+        appFileService.writeText(id, volume, path, content);
+        return ApiResponse.ok();
+    }
+
+    @PostMapping("/api/apps/{id}/files/mkdir")
+    @PreAuthorize("hasAuthority('app:write')")
+    public ApiResponse<Void> mkdir(@PathVariable Long id,
+                                   @RequestParam String volume,
+                                   @RequestParam String path) {
+        appFileService.mkdir(id, volume, path);
+        return ApiResponse.ok();
+    }
+
+    @PostMapping("/api/apps/{id}/files/rename")
+    @PreAuthorize("hasAuthority('app:write')")
+    public ApiResponse<Void> rename(@PathVariable Long id,
+                                    @RequestParam String volume,
+                                    @RequestParam String path,
+                                    @RequestParam String newName) {
+        appFileService.rename(id, volume, path, newName);
+        return ApiResponse.ok();
+    }
+
+    @GetMapping("/api/apps/{id}/health")
+    @PreAuthorize("hasAuthority('app:read')")
+    public ApiResponse<AppHealthDto> health(@PathVariable Long id) {
+        return ApiResponse.ok(appHealthService.check(id));
     }
 }

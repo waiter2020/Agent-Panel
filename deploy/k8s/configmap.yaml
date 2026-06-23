@@ -11,9 +11,15 @@ data:
   STORAGE_ENDPOINT: http://minio:9000
   STORAGE_BUCKET: agent-panel
   K8S_IN_CLUSTER: "true"
+  K8S_ACCESS_HOST: localhost
   PANEL_INFERENCE_URL: http://agent-panel.agentpanel.svc.cluster.local/v1
   K8S_EXPOSE_VIA_INGRESS: "false"
   K8S_INGRESS_HOST: agentpanel.local
+  K8S_INGRESS_CLASS: nginx
+  K8S_INGRESS_TLS_SECRET: ""
+  K8S_APPS_NAMESPACE: agentpanel-apps
+  K8S_STORAGE_CLASS: ""
+  K8S_VOLUME_STORAGE_SIZE: "1Gi"
   LOG_PATH: /var/log/agent-panel
   LOG_LEVEL: INFO
   SPRING_PROFILES_ACTIVE: prod

@@ -42,4 +42,38 @@ class JwtServiceTest {
         assertNotEquals(a, b);
         assertTrue(a.length() > 32);
     }
+
+    @Test
+    void generateProxyTokenIncludesTenantIdAndRoles() {
+        var user = new com.agentpanel.system.entity.SysUser();
+        user.setId(2L);
+        user.setUsername("tenant-user");
+
+        String token = jwtService.generateProxyToken(
+                user,
+                java.util.List.of("user"),
+                java.util.List.of("app:read"),
+                42L,
+                3L,
+                "gateway");
+        var claims = jwtService.parseToken(token);
+        assertEquals("proxy", claims.get("type"));
+        assertEquals(42L, claims.get("appId", Long.class));
+        assertEquals(3L, claims.get("tenantId", Long.class));
+        assertEquals("gateway", claims.get("consoleKey", String.class));
+        assertEquals(java.util.List.of("user"), claims.get("roles", java.util.List.class));
+    }
+
+    @Test
+    void generateSseTokenIncludesTenantId() {
+        var user = new com.agentpanel.system.entity.SysUser();
+        user.setId(5L);
+        user.setUsername("tenant-user");
+        user.setTenantId(4L);
+
+        String token = jwtService.generateSseToken(user, java.util.List.of("app:read"));
+        var claims = jwtService.parseToken(token);
+        assertEquals("sse", claims.get("type"));
+        assertEquals(4L, claims.get("tenantId", Long.class));
+    }
 }
