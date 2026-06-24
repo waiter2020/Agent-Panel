@@ -104,6 +104,19 @@ class DashboardServiceTest {
         assertEquals(1, stats.getDeployingApps());
     }
 
+    @Test
+    void getStatsCountsCreatedApps() {
+        Application created = app(4L, "a4", "created", 1L);
+        when(applicationRepository.findByDeletedFalseAndTenantIdOrderByUpdatedAtDesc(2L))
+                .thenReturn(List.of(created));
+        when(templateRepository.findByDeletedFalse()).thenReturn(List.of());
+        when(topologyRepository.findByDeletedFalseAndTenantIdOrderByUpdatedAtDesc(2L)).thenReturn(List.of());
+
+        DashboardStatsDto stats = dashboardService.getStats();
+
+        assertEquals(1, stats.getCreatedApps());
+    }
+
     private Application app(Long id, String name, String status, Long templateId) {
         Application app = new Application();
         app.setId(id);

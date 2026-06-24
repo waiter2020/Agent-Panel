@@ -8,6 +8,7 @@ import java.util.Map;
 @Data
 public class DashboardStatsDto {
     private int totalApps;
+    private int createdApps;
     private int runningApps;
     private int stoppedApps;
     private int deployingApps;

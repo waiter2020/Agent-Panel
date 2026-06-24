@@ -1,5 +1,6 @@
 export type DashboardStatsDto = {
   totalApps: number;
+  createdApps?: number;
   runningApps: number;
   stoppedApps: number;
   deployingApps: number;

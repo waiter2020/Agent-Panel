@@ -33,6 +33,7 @@ public class DashboardService {
 
         DashboardStatsDto dto = new DashboardStatsDto();
         dto.setTotalApps(apps.size());
+        dto.setCreatedApps((int) apps.stream().filter(a -> "created".equals(a.getStatus())).count());
         dto.setRunningApps((int) apps.stream().filter(a -> "running".equals(a.getStatus())).count());
         dto.setStoppedApps((int) apps.stream().filter(a -> "stopped".equals(a.getStatus())).count());
         dto.setDeployingApps((int) apps.stream().filter(a -> "deploying".equals(a.getStatus())).count());

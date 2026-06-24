@@ -11,9 +11,10 @@ import {
 } from '@ant-design/icons';
 import { PageContainer, StatisticCard } from '@ant-design/pro-components';
 import { Button, Card, Col, Result, Row, Space, Spin, Tag, Typography } from 'antd';
-import { history, useAccess, useRequest } from '@umijs/max';
-import { getDashboardStats } from '@/services/dashboard';
-import type { RecentAppDto } from '@/services/types/app-management';
+import { history, useAccess } from '@umijs/max';
+import { useCallback, useEffect, useState } from 'react';
+import { defaultDashboardStats, getDashboardStats } from '@/services/dashboard';
+import type { DashboardStatsDto, RecentAppDto } from '@/services/types/app-management';
 import './index.less';
 
 const quickLinks = [
@@ -29,9 +30,30 @@ const quickLinks = [
 
 export default () => {
   const access = useAccess();
-  const { data: stats, loading, error, refresh } = useRequest(getDashboardStats);
+  const [stats, setStats] = useState<DashboardStatsDto>(defaultDashboardStats);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string>();
 
-  if (loading && !stats) {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(undefined);
+    try {
+      const data = await getDashboardStats();
+      setStats({ ...defaultDashboardStats, ...data });
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : '加载失败';
+      setLoadError(message);
+      setStats(defaultDashboardStats);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading && !loadError) {
     return (
       <PageContainer title="运营驾驶舱">
         <div style={{ textAlign: 'center', padding: 48 }}><Spin size="large" /></div>
@@ -39,10 +61,10 @@ export default () => {
     );
   }
 
-  if (error) {
+  if (loadError) {
     return (
       <PageContainer title="运营驾驶舱">
-        <Result status="error" title="加载失败" subTitle={error.message} extra={<Button onClick={refresh}>重试</Button>} />
+        <Result status="error" title="加载失败" subTitle={loadError} extra={<Button onClick={load}>重试</Button>} />
       </PageContainer>
     );
   }
@@ -51,22 +73,25 @@ export default () => {
     <PageContainer title="运营驾驶舱" subTitle="多维托管管理概览">
       <Row gutter={[16, 16]} className="dashboard-stats">
         <Col xs={24} sm={12} lg={6}>
-          <StatisticCard className="stat-card" statistic={{ title: '应用总数', value: stats?.totalApps ?? 0, icon: <CloudServerOutlined className="stat-icon" style={{ color: '#667eea' }} /> }} />
+          <StatisticCard className="stat-card" statistic={{ title: '应用总数', value: stats.totalApps, icon: <CloudServerOutlined className="stat-icon" style={{ color: '#667eea' }} /> }} />
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <StatisticCard className="stat-card" statistic={{ title: '运行中', value: stats?.runningApps ?? 0, status: 'success', icon: <ThunderboltOutlined className="stat-icon" style={{ color: '#52c41a' }} /> }} />
+          <StatisticCard className="stat-card" statistic={{ title: '运行中', value: stats.runningApps, status: 'success', icon: <ThunderboltOutlined className="stat-icon" style={{ color: '#52c41a' }} /> }} />
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <StatisticCard className="stat-card" statistic={{ title: '部署中', value: stats?.deployingApps ?? 0, status: 'processing', icon: <LoadingOutlined className="stat-icon" style={{ color: '#1677ff' }} /> }} />
+          <StatisticCard className="stat-card" statistic={{ title: '部署中', value: stats.deployingApps, status: 'processing', icon: <LoadingOutlined className="stat-icon" style={{ color: '#1677ff' }} /> }} />
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <StatisticCard className="stat-card" statistic={{ title: '已停止', value: stats?.stoppedApps ?? 0, icon: <PauseCircleOutlined className="stat-icon" style={{ color: '#8c8c8c' }} /> }} />
+          <StatisticCard className="stat-card" statistic={{ title: '已停止', value: stats.stoppedApps, icon: <PauseCircleOutlined className="stat-icon" style={{ color: '#8c8c8c' }} /> }} />
         </Col>
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} sm={12} lg={6}>
-          <StatisticCard className="stat-card" statistic={{ title: '异常', value: stats?.errorApps ?? 0, status: 'error', icon: <CloudServerOutlined className="stat-icon" style={{ color: '#ff4d4f' }} /> }} />
+          <StatisticCard className="stat-card" statistic={{ title: '待部署', value: stats.createdApps ?? 0, icon: <AppstoreOutlined className="stat-icon" style={{ color: '#1677ff' }} /> }} />
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <StatisticCard className="stat-card" statistic={{ title: '异常', value: stats.errorApps ?? 0, status: 'error', icon: <CloudServerOutlined className="stat-icon" style={{ color: '#ff4d4f' }} /> }} />
         </Col>
       </Row>
 
