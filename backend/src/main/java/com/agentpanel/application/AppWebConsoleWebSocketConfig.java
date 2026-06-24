@@ -18,7 +18,15 @@ public class AppWebConsoleWebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(webConsoleWebSocketProxyHandler, "/api/apps/{appId}/proxy-ws/{portRef}/**")
+        registry.addHandler(webConsoleWebSocketProxyHandler,
+                        "/api/apps/{appId}/proxy/{portRef}",
+                        "/api/apps/{appId}/proxy/{portRef}/",
+                        "/api/apps/{appId}/proxy/{portRef}/*",
+                        "/api/apps/{appId}/proxy/{portRef}/**",
+                        "/api/apps/{appId}/proxy-ws/{portRef}",
+                        "/api/apps/{appId}/proxy-ws/{portRef}/",
+                        "/api/apps/{appId}/proxy-ws/{portRef}/*",
+                        "/api/apps/{appId}/proxy-ws/{portRef}/**")
                 .addInterceptors(webConsoleWebSocketInterceptor)
                 .setAllowedOriginPatterns("*");
     }

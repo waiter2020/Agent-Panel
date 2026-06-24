@@ -1,4 +1,5 @@
 import { request } from '@umijs/max';
+import type { ApplicationDto } from './types/app-management';
 
 
 
@@ -45,7 +46,7 @@ export async function listTemplates() {
 
 export async function listApps() {
 
-  const res = await request<API.ApiResponse<any[]>>('/api/apps');
+  const res = await request<API.ApiResponse<ApplicationDto[]>>('/api/apps');
 
   return res.data;
 
@@ -55,7 +56,7 @@ export async function listApps() {
 
 export async function getApp(id: number) {
 
-  const res = await request<API.ApiResponse<any>>(`/api/apps/${id}`);
+  const res = await request<API.ApiResponse<ApplicationDto>>(`/api/apps/${id}`);
 
   return res.data;
 

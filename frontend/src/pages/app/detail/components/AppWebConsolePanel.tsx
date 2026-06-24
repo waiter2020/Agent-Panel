@@ -1,4 +1,4 @@
-import { getAppProxyUrl } from '@/services/appHealth';
+import { getAppConsolePageUrl, getAppProxyUrl } from '@/services/appHealth';
 import { establishProxySession } from '@/services/auth';
 import { Alert, Button, Space, Spin } from 'antd';
 import { useEffect, useState } from 'react';
@@ -8,9 +8,9 @@ type Props = {
   consoleKey: string;
   title?: string;
   disabled?: boolean;
-  accessUrls?: { name: string; url: string }[];
   trustedProxyHint?: boolean;
   failureHint?: string;
+  standalone?: boolean;
 };
 
 export default function AppWebConsolePanel({
@@ -18,15 +18,13 @@ export default function AppWebConsolePanel({
   consoleKey,
   title,
   disabled,
-  accessUrls = [],
   trustedProxyHint,
   failureHint,
+  standalone,
 }: Props) {
   const [src, setSrc] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
-
-  const externalUrl = accessUrls.find((u) => u.name === consoleKey)?.url;
 
   function parseProbeError(text: string, status: number): string {
     const htmlMatch = text.match(/<p>([^<]+)<\/p>/);
@@ -76,6 +74,8 @@ export default function AppWebConsolePanel({
     return () => { cancelled = true; };
   }, [appId, consoleKey, disabled]);
 
+  const iframeHeight = standalone ? 'calc(100vh - 64px)' : '72vh';
+
   if (disabled) {
     return <Alert type="info" showIcon message="应用未运行，无法打开 Web 控制台" />;
   }
@@ -97,11 +97,6 @@ export default function AppWebConsolePanel({
           <Space direction="vertical">
             <span>{error}</span>
             {failureHint && <span style={{ color: '#666' }}>{failureHint}</span>}
-            {externalUrl && (
-              <Button type="link" href={`http://${externalUrl}`} target="_blank" rel="noreferrer">
-                在新窗口打开外部地址 ({externalUrl})
-              </Button>
-            )}
           </Space>
         )}
       />
@@ -109,22 +104,25 @@ export default function AppWebConsolePanel({
   }
   return (
     <>
-      <div style={{ marginBottom: 8 }}>
-        {src && (
-          <Button type="link" href={src} target="_blank" rel="noreferrer">
+      {!standalone && (
+        <div style={{ marginBottom: 8 }}>
+          <Button
+            type="link"
+            onClick={() => window.open(getAppConsolePageUrl(appId, consoleKey), '_blank', 'noopener,noreferrer')}
+          >
             在新窗口打开 {title || consoleKey}
           </Button>
-        )}
-        {externalUrl && (
-          <Button type="link" href={`http://${externalUrl}`} target="_blank" rel="noreferrer">
-            直接访问 {externalUrl}
-          </Button>
-        )}
-      </div>
+        </div>
+      )}
       <iframe
         title={title || consoleKey}
         src={src}
-        style={{ width: '100%', height: '72vh', border: '1px solid #f0f0f0', borderRadius: 8 }}
+        style={{
+          width: '100%',
+          height: iframeHeight,
+          border: '1px solid #f0f0f0',
+          borderRadius: 8,
+        }}
       />
     </>
   );

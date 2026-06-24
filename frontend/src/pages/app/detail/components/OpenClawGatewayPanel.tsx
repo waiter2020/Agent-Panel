@@ -5,7 +5,7 @@ type Props = {
   consoleKey: string;
   title?: string;
   disabled?: boolean;
-  accessUrls?: { name: string; url: string }[];
+  standalone?: boolean;
 };
 
 export default function OpenClawGatewayPanel(props: Props) {

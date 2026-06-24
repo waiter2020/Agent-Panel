@@ -15,12 +15,22 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class OpenClawTrustedProxyHeaders {
 
+    public static final String OPENCLAW_SCOPES_HEADER = "x-openclaw-scopes";
+    public static final String DEFAULT_OPERATOR_SCOPES =
+            "operator.admin,operator.read,operator.write";
+    public static final List<String> DEFAULT_OPERATOR_SCOPE_LIST = List.of(
+            "operator.admin",
+            "operator.read",
+            "operator.write"
+    );
+
     private static final Set<String> STRIP_FROM_INBOUND = Set.of(
             OpenClawProperties.DEFAULT_USER_HEADER,
             OpenClawProperties.DEFAULT_PROXY_MARKER_HEADER,
             "x-forwarded-user",
             "x-forwarded-proto",
-            "x-forwarded-host"
+            "x-forwarded-host",
+            OPENCLAW_SCOPES_HEADER
     );
 
     private final OpenClawProperties openClawProperties;
@@ -44,6 +54,17 @@ public class OpenClawTrustedProxyHeaders {
     }
 
     public Map<String, String> buildUpstreamHeaders(HttpServletRequest request) {
+        return buildUpstreamHeaders(
+                request != null ? request.getHeader("Host") : null,
+                resolveProto(request),
+                true);
+    }
+
+    public Map<String, String> buildUpstreamHeadersFromHandshake(String host, String forwardedProto) {
+        return buildUpstreamHeaders(host, forwardedProto, true);
+    }
+
+    private Map<String, String> buildUpstreamHeaders(String host, String proto, boolean includeScopes) {
         Map<String, String> headers = new LinkedHashMap<>();
         String username = SecurityUtils.getCurrentUsername();
         if (username == null || username.isBlank()) {
@@ -51,18 +72,28 @@ public class OpenClawTrustedProxyHeaders {
         }
         headers.put(openClawProperties.getUserHeader(), username);
         headers.put(openClawProperties.getProxyMarkerHeader(), "1");
-        if (request != null) {
-            String proto = request.getHeader("X-Forwarded-Proto");
-            if (proto == null || proto.isBlank()) {
-                proto = request.isSecure() ? "https" : "http";
-            }
-            headers.put("X-Forwarded-Proto", proto);
-            String host = request.getHeader("Host");
-            if (host != null && !host.isBlank()) {
-                headers.put("X-Forwarded-Host", host);
-            }
+        if (proto == null || proto.isBlank()) {
+            proto = "http";
+        }
+        headers.put("X-Forwarded-Proto", proto);
+        if (host != null && !host.isBlank()) {
+            headers.put("X-Forwarded-Host", host);
+        }
+        if (includeScopes) {
+            headers.put(OPENCLAW_SCOPES_HEADER, DEFAULT_OPERATOR_SCOPES);
         }
         return headers;
+    }
+
+    private static String resolveProto(HttpServletRequest request) {
+        if (request == null) {
+            return "http";
+        }
+        String proto = request.getHeader("X-Forwarded-Proto");
+        if (proto == null || proto.isBlank()) {
+            proto = request.isSecure() ? "https" : "http";
+        }
+        return proto;
     }
 
     public void applyToRequestBuilder(java.net.http.HttpRequest.Builder builder, HttpServletRequest request) {
@@ -74,7 +105,8 @@ public class OpenClawTrustedProxyHeaders {
                 openClawProperties.getUserHeader(),
                 openClawProperties.getProxyMarkerHeader(),
                 "X-Forwarded-Proto",
-                "X-Forwarded-Host"
+                "X-Forwarded-Host",
+                OPENCLAW_SCOPES_HEADER
         );
     }
 }

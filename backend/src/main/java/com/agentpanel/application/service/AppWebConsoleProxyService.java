@@ -7,7 +7,10 @@ import com.agentpanel.auth.SecurityUtils;
 import com.agentpanel.common.BusinessException;
 import com.agentpanel.config.AgentRuntimeProperties;
 import com.agentpanel.config.AgentUpstreamHttpClients;
+import com.agentpanel.config.OpenClawProperties;
 import com.agentpanel.system.service.AuditService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +56,9 @@ public class AppWebConsoleProxyService {
     private final AuditService auditService;
     private final AgentRuntimeProperties runtimeProperties;
     private final OpenClawTrustedProxyHeaders trustedProxyHeaders;
+    private final OpenClawProperties openClawProperties;
+    private final OpenClawOriginResolver openClawOriginResolver;
+    private final ObjectMapper objectMapper;
     private final HttpClient httpClient = AgentUpstreamHttpClients.forProxy();
 
     public void proxy(Long appId, String portRef, HttpServletRequest request, HttpServletResponse response)
@@ -109,11 +115,13 @@ public class AppWebConsoleProxyService {
             byte[] body = upstream.body() == null ? new byte[0] : upstream.body();
             String contentType = upstream.headers().firstValue("content-type").orElse("");
             if (contentType.toLowerCase().contains("text/html")) {
-                body = rewriteHtml(body, proxyPrefix, targetBase, appId, portRef);
+                body = rewriteHtml(body, proxyPrefix, targetBase, appId, portRef, trustedProxy);
             } else if (contentType.toLowerCase().contains("javascript")
                     || contentType.toLowerCase().contains("text/css")) {
                 body = rewriteTextAssets(new String(body, StandardCharsets.UTF_8), proxyPrefix, targetBase, appId, portRef)
                         .getBytes(StandardCharsets.UTF_8);
+            } else if (trustedProxy && contentType.toLowerCase().contains("json")) {
+                body = rewriteOpenClawGatewayJson(body, request);
             }
 
             response.setStatus(status);
@@ -234,8 +242,18 @@ public class AppWebConsoleProxyService {
                 : runtimeProperties.getProvider();
         Integer hostPort = resolveHostPort(app, portRef);
         boolean trustedProxy = trustedProxyHeaders.shouldInject(resolveTemplateCode(app), portRef);
+        String peerUrl = peerUrlResolver.resolveHttpPeerUrl(app.getId(), containerPort, provider);
+        if (trustedProxy) {
+            if (probe(peerUrl, true)) {
+                log.debug("Proxy target selected appId={} portRef={} url={} (trusted-proxy peer)",
+                        app.getId(), portRef, peerUrl);
+                return peerUrl;
+            }
+            log.warn("OpenClaw trusted-proxy peer URL unreachable appId={} url={}, falling back to host port",
+                    app.getId(), peerUrl);
+        }
         LinkedHashSet<String> candidates = new LinkedHashSet<>();
-        candidates.add(peerUrlResolver.resolveHttpPeerUrl(app.getId(), containerPort, provider));
+        candidates.add(peerUrl);
         if ("docker".equals(provider) && hostPort != null) {
             candidates.add("http://host.docker.internal:" + hostPort);
             String accessHost = runtimeProperties.getDocker().getAccessHost();
@@ -246,7 +264,12 @@ public class AppWebConsoleProxyService {
         }
         for (String candidate : candidates) {
             if (probe(candidate, trustedProxy)) {
-                log.debug("Proxy target selected appId={} portRef={} url={}", app.getId(), portRef, candidate);
+                if (trustedProxy && !candidate.equals(peerUrl)) {
+                    log.warn("Proxy target selected appId={} portRef={} url={} (loopback fallback)",
+                            app.getId(), portRef, candidate);
+                } else {
+                    log.debug("Proxy target selected appId={} portRef={} url={}", app.getId(), portRef, candidate);
+                }
                 return candidate;
             }
         }
@@ -343,7 +366,8 @@ public class AppWebConsoleProxyService {
         return LOCAL_ORIGIN.matcher(url).replaceAll(proxyPrefix);
     }
 
-    private byte[] rewriteHtml(byte[] body, String proxyPrefix, String targetBase, Long appId, String portRef) {
+    private byte[] rewriteHtml(byte[] body, String proxyPrefix, String targetBase, Long appId, String portRef,
+                               boolean trustedProxy) {
         String html = rewriteTextAssets(new String(body, StandardCharsets.UTF_8), proxyPrefix, targetBase, appId, portRef);
         String baseTag = "<base href=\"" + proxyPrefix + "/\">";
         if (html.matches("(?is).*<head[^>]*>.*")) {
@@ -353,7 +377,43 @@ public class AppWebConsoleProxyService {
         } else {
             html = baseTag + html;
         }
+        if (trustedProxy) {
+            html = injectOpenClawTrustedProxyBootstrap(html, appId, portRef);
+        }
         return html.getBytes(StandardCharsets.UTF_8);
+    }
+
+    static String injectOpenClawTrustedProxyBootstrap(String html, Long appId, String portRef) {
+        String wsUrl = "/api/apps/" + appId + "/proxy/" + portRef;
+        String bootKey = "agentpanel.gateway.bootstrap." + appId;
+        String script = """
+                <script>(function(){
+                try{
+                var bootKey=%s;
+                var ws=%s;
+                if(!sessionStorage.getItem(bootKey)){
+                var keys=[];
+                for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);
+                if(/openclaw|gateway|device|token/i.test(k))keys.push(k);}
+                keys.forEach(function(k){localStorage.removeItem(k);});
+                keys=[];
+                for(var j=0;j<sessionStorage.length;j++){var sk=sessionStorage.key(j);
+                if(/openclaw|gateway|device|token/i.test(sk)&&sk!==bootKey)keys.push(sk);}
+                keys.forEach(function(k){sessionStorage.removeItem(k);});
+                sessionStorage.setItem(bootKey,'1');
+                }
+                sessionStorage.setItem('openclaw.gateway.wsUrl',ws);
+                sessionStorage.setItem('openclaw.controlUi.wsUrl',ws);
+                }catch(e){}})();</script>
+                """.formatted(quoteJsString(bootKey), quoteJsString(wsUrl));
+        if (html.matches("(?is).*</body>.*")) {
+            return html.replaceFirst("(?i)</body>", script + "</body>");
+        }
+        return html + script;
+    }
+
+    private static String quoteJsString(String value) {
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     private String rewriteTextAssets(String content, String proxyPrefix, String targetBase, Long appId, String portRef) {
@@ -367,6 +427,74 @@ public class AppWebConsoleProxyService {
                 "(wss?)://([^/]+)" + Pattern.quote("/api/apps/" + appId + "/proxy/" + portRef),
                 "$1://$2" + wsProxyPrefix);
         return rewritten;
+    }
+
+    static boolean isControlUiConfigPath(String subPath) {
+        if (subPath == null || subPath.isBlank()) {
+            return false;
+        }
+        String lower = subPath.toLowerCase();
+        return lower.contains("control-ui-config") || lower.endsWith("/config.json");
+    }
+
+    byte[] rewriteOpenClawGatewayJson(byte[] body, HttpServletRequest request) {
+        try {
+            Map<String, Object> root = objectMapper.readValue(body, new TypeReference<>() {});
+            if (!root.containsKey("gateway") && !looksLikeControlUiPayload(root)) {
+                return body;
+            }
+            return rewriteControlUiConfigJson(body, openClawOriginResolver.resolveAllowedOrigins(request));
+        } catch (Exception e) {
+            log.debug("Failed to rewrite OpenClaw gateway JSON: {}", e.getMessage());
+            return body;
+        }
+    }
+
+    static boolean looksLikeControlUiPayload(Map<String, Object> root) {
+        Object gateway = root.get("gateway");
+        if (!(gateway instanceof Map<?, ?> gatewayMap)) {
+            return false;
+        }
+        return ((Map<?, ?>) gatewayMap).containsKey("controlUi");
+    }
+
+    byte[] rewriteControlUiConfigJson(byte[] body, List<String> extraOrigins) {
+        try {
+            Map<String, Object> root = objectMapper.readValue(body, new TypeReference<>() {});
+            @SuppressWarnings("unchecked")
+            Map<String, Object> gateway = root.get("gateway") instanceof Map<?, ?> gatewayMap
+                    ? (Map<String, Object>) gatewayMap
+                    : null;
+            if (gateway == null) {
+                gateway = new LinkedHashMap<>();
+                root.put("gateway", gateway);
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> controlUi = gateway.get("controlUi") instanceof Map<?, ?> controlUiMap
+                    ? (Map<String, Object>) controlUiMap
+                    : new LinkedHashMap<>();
+            LinkedHashSet<String> origins = new LinkedHashSet<>();
+            Object existing = controlUi.get("allowedOrigins");
+            if (existing instanceof List<?> list) {
+                for (Object item : list) {
+                    if (item != null) {
+                        origins.add(String.valueOf(item));
+                    }
+                }
+            }
+            if (openClawProperties.getPanelPublicOrigins() != null) {
+                origins.addAll(openClawProperties.resolvePanelPublicOrigins());
+            }
+            if (extraOrigins != null) {
+                origins.addAll(extraOrigins);
+            }
+            controlUi.put("allowedOrigins", new ArrayList<>(origins));
+            gateway.put("controlUi", controlUi);
+            return objectMapper.writeValueAsBytes(root);
+        } catch (Exception e) {
+            log.debug("Failed to rewrite control-ui-config.json: {}", e.getMessage());
+            return body;
+        }
     }
 
     private void validateAppRunning(Application app) {
@@ -411,18 +539,25 @@ public class AppWebConsoleProxyService {
     }
 
     private String extractSubPath(String requestUri, Long appId, String portRef) {
+        String path = requestUri;
+        String query = "";
+        int queryIndex = requestUri == null ? -1 : requestUri.indexOf('?');
+        if (queryIndex >= 0) {
+            path = requestUri.substring(0, queryIndex);
+            query = requestUri.substring(queryIndex);
+        }
         String httpPrefix = "/api/apps/" + appId + "/proxy/" + portRef;
         String wsPrefix = "/api/apps/" + appId + "/proxy-ws/" + portRef;
         for (String prefix : List.of(wsPrefix, httpPrefix)) {
-            if (requestUri == null || !requestUri.startsWith(prefix)) {
+            if (path == null || !path.startsWith(prefix)) {
                 continue;
             }
-            if (requestUri.length() <= prefix.length()) {
-                return "/";
+            if (path.length() <= prefix.length()) {
+                return "/" + query;
             }
-            String sub = requestUri.substring(prefix.length());
-            return sub.isBlank() ? "/" : sub;
+            String sub = path.substring(prefix.length());
+            return (sub.isBlank() ? "/" : sub) + query;
         }
-        return "/";
+        return "/" + query;
     }
 }

@@ -8,6 +8,7 @@ metadata:
     # 启用 cert-manager 自动签发 TLS 证书时取消下行注释，并确保已安装 ClusterIssuer
     # cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
+  ingressClassName: nginx
   tls:
     - hosts:
         - agent-panel.example.com

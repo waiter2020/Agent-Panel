@@ -17,6 +17,7 @@ export default function AppOverviewPanel({ app, runtimeStatus, health, healthLoa
     STOPPED: 'default',
     CREATED: 'blue',
     ERROR: 'red',
+    MISSING: 'red',
     UNKNOWN: 'orange',
   };
 

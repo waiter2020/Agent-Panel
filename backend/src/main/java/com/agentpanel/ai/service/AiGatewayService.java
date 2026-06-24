@@ -112,7 +112,8 @@ public class AiGatewayService {
 
     public Flux<String> chat(ChatRequest request) {
         LlmProvider provider = providerRepository.findById(request.getProviderId())
-                .orElseThrow(() -> new BusinessException("Provider 不存在"));
+                .filter(p -> !p.isDeleted() && p.isEnabled())
+                .orElseThrow(() -> new BusinessException("Provider 不可用"));
         log.info("AI 对话请求: provider={} model={} stream=true", provider.getCode(), request.getModel());
         long start = System.currentTimeMillis();
         return streamChat(provider, request.getModel(), toSpringMessages(request.getMessages()))

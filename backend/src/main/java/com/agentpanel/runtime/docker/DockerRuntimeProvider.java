@@ -1,5 +1,6 @@
 package com.agentpanel.runtime.docker;
 
+import com.agentpanel.application.service.OpenClawGatewayBootstrapService;
 import com.agentpanel.common.BusinessException;
 import com.agentpanel.config.AgentRuntimeProperties;
 import com.agentpanel.runtime.api.*;
@@ -46,6 +47,7 @@ public class DockerRuntimeProvider implements AgentRuntimeProvider {
     private final AgentRuntimeProperties properties;
     private final DockerHostDataPathResolver hostDataPathResolver;
     private final DockerVolumePermissionService volumePermissionService;
+    private final OpenClawGatewayBootstrapService openClawGatewayBootstrapService;
     private DockerClient dockerClient;
 
     @PostConstruct
@@ -99,6 +101,7 @@ public class DockerRuntimeProvider implements AgentRuntimeProvider {
                 if (appId != null) {
                     Path panelPath = hostDataPathResolver.toPanelVolumePath(appId, volume.name());
                     volumePermissionService.prepareVolumeDirectory(panelPath);
+                    bootstrapOpenClawConfigIfNeeded(spec, appId, volume.name(), panelPath);
                 }
                 if (panelDataMount.usesNamedVolume() && appId != null) {
                     volumeMounts.add(new Mount()
@@ -172,7 +175,21 @@ public class DockerRuntimeProvider implements AgentRuntimeProvider {
         if (!allowUnconfigured) {
             return;
         }
-        createCmd.withCmd("node", "openclaw.mjs", "gateway", "--allow-unconfigured");
+        createCmd.withCmd("node", "openclaw.mjs", "gateway", "--allow-unconfigured",
+                "--bind", "lan", "--auth", "trusted-proxy");
+    }
+
+    private void bootstrapOpenClawConfigIfNeeded(DeploySpec spec, Long appId, String volumeName, Path volumePath) {
+        if (spec.labels() == null
+                || !OpenClawGatewayBootstrapService.OPENCLAW_TEMPLATE_CODE.equals(spec.labels().get("agentpanel.template"))) {
+            return;
+        }
+        try {
+            openClawGatewayBootstrapService.bootstrapDockerVolumeAtPath(
+                    appId, volumeName, volumePath, resolveNetwork(spec));
+        } catch (Exception e) {
+            throw new BusinessException("写入 OpenClaw Gateway 配置失败: " + e.getMessage());
+        }
     }
 
     private DeployResult evaluateDeployResult(String containerId, List<PortMapping> resolvedPorts)
@@ -278,6 +295,60 @@ public class DockerRuntimeProvider implements AgentRuntimeProvider {
         }
     }
 
+    public static final String CONTAINER_MISSING_MARKER = "container_missing";
+
+    public static boolean isContainerMissingStatus(RuntimeStatus status) {
+        if (status == null) {
+            return false;
+        }
+        if (status.phase() == RuntimeStatus.Phase.MISSING) {
+            return true;
+        }
+        return CONTAINER_MISSING_MARKER.equals(status.message()) || isNotFoundMessage(status.message());
+    }
+
+    static boolean isNotFoundMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        String lower = message.toLowerCase();
+        return lower.contains("no such container") || lower.contains("not found");
+    }
+
+    public Optional<String> findContainerIdByName(String name) {
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            List<Container> containers = dockerClient.listContainersCmd()
+                    .withShowAll(true)
+                    .withNameFilter(List.of(name))
+                    .exec();
+            return pickContainerId(containers, name);
+        } catch (Exception e) {
+            log.debug("按名称查找容器失败 name={}: {}", name, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    static Optional<String> pickContainerId(List<Container> containers, String name) {
+        if (containers == null || containers.isEmpty()) {
+            return Optional.empty();
+        }
+        String expected = "/" + name;
+        for (Container container : containers) {
+            if (container.getNames() == null) {
+                continue;
+            }
+            for (String containerName : container.getNames()) {
+                if (expected.equals(containerName) || ("/" + name).equals(containerName) || name.equals(containerName)) {
+                    return Optional.ofNullable(container.getId());
+                }
+            }
+        }
+        return Optional.ofNullable(containers.getFirst().getId());
+    }
+
     @Override
     public RuntimeStatus status(RuntimeRef ref) {
         try {
@@ -291,9 +362,18 @@ public class DockerRuntimeProvider implements AgentRuntimeProvider {
                 default -> running ? RuntimeStatus.Phase.RUNNING : RuntimeStatus.Phase.UNKNOWN;
             };
             return new RuntimeStatus(phase, running, state);
+        } catch (NotFoundException e) {
+            return containerMissingStatus();
         } catch (Exception e) {
+            if (isNotFoundMessage(e.getMessage())) {
+                return containerMissingStatus();
+            }
             return new RuntimeStatus(RuntimeStatus.Phase.ERROR, false, e.getMessage());
         }
+    }
+
+    private static RuntimeStatus containerMissingStatus() {
+        return new RuntimeStatus(RuntimeStatus.Phase.MISSING, false, CONTAINER_MISSING_MARKER);
     }
 
     @Override

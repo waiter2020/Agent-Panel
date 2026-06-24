@@ -15,7 +15,7 @@ public class AppWebConsoleProxyController {
 
     private final AppWebConsoleProxyService proxyService;
 
-    @RequestMapping(value = "/api/apps/{appId}/proxy/{portRef}/**")
+    @RequestMapping(value = "/api/apps/{appId}/proxy/{portRef}/**", headers = "!Upgrade")
     @PreAuthorize("hasAuthority('app:read')")
     public void proxy(@PathVariable Long appId,
                       @PathVariable String portRef,

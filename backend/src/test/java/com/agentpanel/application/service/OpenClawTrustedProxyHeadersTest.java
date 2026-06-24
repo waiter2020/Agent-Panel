@@ -43,6 +43,15 @@ class OpenClawTrustedProxyHeadersTest {
         assertEquals("1", upstream.get(OpenClawProperties.DEFAULT_PROXY_MARKER_HEADER));
         assertEquals("https", upstream.get("X-Forwarded-Proto"));
         assertEquals("panel.example.com", upstream.get("X-Forwarded-Host"));
+        assertEquals(OpenClawTrustedProxyHeaders.DEFAULT_OPERATOR_SCOPES,
+                upstream.get(OpenClawTrustedProxyHeaders.OPENCLAW_SCOPES_HEADER));
+    }
+
+    @Test
+    void buildUpstreamHeadersFromHandshakeUsesProvidedHost() {
+        Map<String, String> upstream = headers.buildUpstreamHeadersFromHandshake("localhost:8080", "http");
+        assertEquals("localhost:8080", upstream.get("X-Forwarded-Host"));
+        assertEquals("http", upstream.get("X-Forwarded-Proto"));
     }
 
     @Test

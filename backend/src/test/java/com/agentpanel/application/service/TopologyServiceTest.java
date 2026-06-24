@@ -59,6 +59,7 @@ class TopologyServiceTest {
     @Mock private SharedSkillRepository sharedSkillRepository;
     @Mock private DockerRuntimeProvider dockerProvider;
     @Mock private TaskKanbanService taskKanbanService;
+    @Mock private OpenClawGatewayBootstrapService openClawGatewayBootstrapService;
 
     @InjectMocks
     private ApplicationService applicationService;
@@ -144,6 +145,7 @@ class TopologyServiceTest {
         assertEquals("apk_test_inference_key_1234567890", result.getInferenceKeyRaw());
         verify(apiKeyManagementService).createForTenant(any(), eq(9L));
         verify(dockerProvider).ensureNetwork("topo-net");
+        verify(openClawGatewayBootstrapService).bootstrapBeforeDeploy(app, "topo-net");
         verify(appEnvRepository, atLeastOnce()).save(argThat(env ->
                 "OPENAI_BASE_URL".equals(env.getKey())
                         || "OPENAI_API_KEY".equals(env.getKey())

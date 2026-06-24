@@ -34,7 +34,7 @@
 - [ ] **若必须使用 Docker**：限制宿主机访问、使用 rootless Docker 或专用节点；面板进程非 root
 - [ ] **RBAC**：K8s 模式确认 `agentpanel-apps` 命名空间 Role 最小权限（仅 deployments/services/pods 等必需资源）；并绑定 ClusterRole `agent-panel-metrics-reader`（`metrics.k8s.io` + `nodes/proxy`），否则 CPU/内存与网络监控不可用
 - [ ] **metrics-server**：集群已安装 metrics-server；`kubectl top pods -n agentpanel-apps` 可返回数据
-- [ ] **镜像拉取**：配置 `imagePullSecrets` 与私有镜像仓库扫描
+- [ ] **镜像拉取**：Helm 配置 `image.pullSecrets`（渲染为 Pod `imagePullSecrets`）与私有镜像仓库扫描
 - [ ] **资源限制**：为面板与 Agent 工作负载设置 `resources.requests/limits`
 
 ## 5. 多租户与访问控制
@@ -52,7 +52,7 @@
 
 ## 7. 监控与可观测性
 
-- [ ] **健康检查**：K8s `livenessProbe` / `readinessProbe` 指向 `/actuator/health`（已内置 Actuator）
+- [ ] **健康检查**：Docker Compose 与 K8s 探针经由容器 HTTP 入口访问 `/actuator/health`、`/actuator/health/liveness`、`/actuator/health/readiness`，覆盖 nginx 到 Spring Boot 的完整入口链路
 - [ ] **日志目录**：应用日志落盘至 `LOG_PATH`（默认 `/var/log/agent-panel`），文件为 `agent-panel.log` 与 `agent-panel-error.log`
 - [ ] **日志卷**：Docker Compose 挂载 `panel-logs` 卷；K8s 挂载 `emptyDir` 或 PVC 至 `/var/log/agent-panel`
 - [ ] **环境变量**：`LOG_PATH`、`LOG_LEVEL`、`SPRING_PROFILES_ACTIVE=prod` 已配置

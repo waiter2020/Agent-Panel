@@ -5,6 +5,7 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 @Getter
@@ -17,15 +18,41 @@ public class OpenClawProperties {
 
     private String userHeader = DEFAULT_USER_HEADER;
     private String proxyMarkerHeader = DEFAULT_PROXY_MARKER_HEADER;
-    private List<String> trustedProxies = new ArrayList<>(List.of("172.17.0.0/16"));
+    private List<String> trustedProxies = new ArrayList<>();
+    private List<String> panelPublicOrigins = new ArrayList<>(List.of(
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+            "http://localhost"
+    ));
     private K8s k8s = new K8s();
+
+    public List<String> resolvePanelPublicOrigins() {
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        if (panelPublicOrigins != null) {
+            for (String origin : panelPublicOrigins) {
+                if (origin != null && !origin.isBlank()) {
+                    merged.add(origin.trim());
+                }
+            }
+        }
+        if (merged.isEmpty()) {
+            merged.add("http://localhost:8080");
+        }
+        return List.copyOf(merged);
+    }
 
     @Getter
     @Setter
     public static class K8s {
-        private List<String> trustedProxyCidrs = new ArrayList<>(List.of("10.244.0.0/16"));
+        private List<String> trustedProxyCidrs = new ArrayList<>();
+        /** When true, discover node PodCIDR from the Kubernetes API at deploy time. */
+        private boolean autoDiscoverNodePodCidrs = true;
     }
 
+    /**
+     * @deprecated use {@link com.agentpanel.application.service.OpenClawTrustedProxyCidrResolver}
+     */
+    @Deprecated
     public List<String> resolveTrustedProxies(String runtimeProvider) {
         List<String> merged = new ArrayList<>();
         if (trustedProxies != null) {

@@ -7,6 +7,7 @@ image:
   repository: agent-panel
   tag: latest
   pullPolicy: IfNotPresent
+  pullSecrets: []
 
 replicaCount: 1
 
@@ -37,6 +38,9 @@ resources:
 
 panel:
   runtimeProvider: k8s
+  springProfilesActive: prod
+  logPath: /var/log/agent-panel
+  logLevel: INFO
   inferenceUrl: http://agent-panel.agentpanel.svc.cluster.local/v1
   k8sInCluster: true
   k8sAccessHost: localhost
@@ -49,12 +53,14 @@ panel:
   appsNamespace: agentpanel-apps
 
 openclaw:
-  # Pod CIDR where Agent Panel runs; OpenClaw Gateway trusts proxy requests from these networks.
-  trustedProxies:
-    - 10.244.0.0/16
+  # Optional extra CIDRs; Panel auto-discovers proxy source networks at OpenClaw deploy time.
+  trustedProxies: []
+  panelPublicOrigins:
+    - http://localhost:8080
+    - http://127.0.0.1:8080
   k8s:
-    trustedProxyCidrs:
-      - 10.244.0.0/16
+    trustedProxyCidrs: []
+    autoDiscoverNodePodCidrs: true
 
 database:
   external: false

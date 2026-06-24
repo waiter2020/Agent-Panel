@@ -48,6 +48,30 @@ export type AppHealthConsoleLink = {
   proxyPath: string;
 };
 
+export type ApplicationDto = {
+  id: number;
+  name: string;
+  templateId?: number;
+  templateName?: string;
+  templateCode?: string;
+  managementSchema?: ManagementSchema;
+  ownerId?: number;
+  image?: string;
+  tag?: string;
+  status?: string;
+  ports?: Array<Record<string, unknown>>;
+  resources?: Record<string, unknown>;
+  volumes?: Array<Record<string, unknown>>;
+  replicas?: number;
+  runtimeProvider?: string;
+  remark?: string;
+  runtimeRef?: string;
+  runtimeNamespace?: string;
+  env?: Array<{ key: string; value?: string; secret?: boolean }>;
+  envSchema?: Array<Record<string, unknown>>;
+  accessUrls?: Array<Record<string, unknown>>;
+};
+
 export type TaskBoardDto = {
   id: number;
   name: string;

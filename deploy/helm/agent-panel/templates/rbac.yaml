@@ -1,4 +1,4 @@
-{{- if and .Values.rbac.create .Values.appsNamespace.create .Values.panel.appsNamespace }}
+{{- if and .Values.rbac.create .Values.panel.appsNamespace }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

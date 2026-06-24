@@ -6,6 +6,9 @@ metadata:
   labels:
     {{- include "agent-panel.labels" . | nindent 4 }}
 data:
+  SPRING_PROFILES_ACTIVE: {{ .Values.panel.springProfilesActive | quote }}
+  LOG_PATH: {{ .Values.panel.logPath | quote }}
+  LOG_LEVEL: {{ .Values.panel.logLevel | quote }}
   AGENT_RUNTIME_PROVIDER: {{ .Values.panel.runtimeProvider | quote }}
   DB_HOST: {{ .Values.database.host | quote }}
   DB_PORT: {{ .Values.database.port | quote }}
@@ -22,3 +25,4 @@ data:
   K8S_APPS_NAMESPACE: {{ .Values.panel.appsNamespace | quote }}
   K8S_STORAGE_CLASS: {{ .Values.panel.k8sStorageClass | quote }}
   K8S_VOLUME_STORAGE_SIZE: {{ .Values.panel.k8sVolumeStorageSize | quote }}
+  SPRING_APPLICATION_JSON: {{ dict "agent" (dict "openclaw" (dict "trusted-proxies" .Values.openclaw.trustedProxies "panel-public-origins" .Values.openclaw.panelPublicOrigins "k8s" (dict "trusted-proxy-cidrs" .Values.openclaw.k8s.trustedProxyCidrs "auto-discover-node-pod-cidrs" .Values.openclaw.k8s.autoDiscoverNodePodCidrs))) | toJson | quote }}

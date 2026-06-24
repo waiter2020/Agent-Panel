@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
 public class AppWebConsoleWebSocketInterceptor implements HandshakeInterceptor {
 
     private static final String PROXY_COOKIE = "AP_PROXY";
-    private static final Pattern PROXY_WS_PATH = Pattern.compile("/api/apps/(\\d+)/proxy-ws/([^/]+)");
+    private static final Pattern PROXY_WS_PATH = Pattern.compile("/api/apps/(\\d+)/proxy(?:-ws)?/([^/]+)");
 
     private final JwtService jwtService;
     private final SysUserRepository userRepository;
@@ -87,7 +87,7 @@ public class AppWebConsoleWebSocketInterceptor implements HandshakeInterceptor {
             }
             attributes.put("appId", pathAppId);
             attributes.put("portRef", pathPortRef);
-            attributes.put("requestUri", request.getURI().getPath());
+            attributes.put("requestUri", buildProxyRequestUri(request.getURI().getPath(), request.getURI().getRawQuery()));
             String username = claims.get("username", String.class);
             if (username == null || username.isBlank()) {
                 username = user.getUsername();
@@ -104,6 +104,13 @@ public class AppWebConsoleWebSocketInterceptor implements HandshakeInterceptor {
             var principal = new AuthPrincipal(userId, username, tenantId);
             var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
             attributes.put("authentication", auth);
+            attributes.put("forwardedHost", httpRequest.getHeader("Host"));
+            String forwardedProto = httpRequest.getHeader("X-Forwarded-Proto");
+            if (forwardedProto == null || forwardedProto.isBlank()) {
+                forwardedProto = httpRequest.isSecure() ? "https" : "http";
+            }
+            attributes.put("forwardedProto", forwardedProto);
+            attributes.put("referer", httpRequest.getHeader("Referer"));
             return true;
         } catch (Exception e) {
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
@@ -134,5 +141,29 @@ public class AppWebConsoleWebSocketInterceptor implements HandshakeInterceptor {
             }
         }
         return null;
+    }
+
+    private String buildProxyRequestUri(String path, String query) {
+        String sanitizedQuery = sanitizeQuery(query);
+        return path + (sanitizedQuery.isBlank() ? "" : "?" + sanitizedQuery);
+    }
+
+    private String sanitizeQuery(String query) {
+        if (query == null || query.isBlank()) {
+            return "";
+        }
+        List<String> parts = new ArrayList<>();
+        for (String pair : query.split("&")) {
+            if (pair.isBlank()) {
+                continue;
+            }
+            int idx = pair.indexOf('=');
+            String key = idx >= 0 ? pair.substring(0, idx) : pair;
+            if ("token".equalsIgnoreCase(key)) {
+                continue;
+            }
+            parts.add(pair);
+        }
+        return String.join("&", parts);
     }
 }

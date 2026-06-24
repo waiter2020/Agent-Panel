@@ -16,6 +16,10 @@ spec:
         {{- include "agent-panel.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.image.pullSecrets | nindent 8 }}
+      {{- end }}
       containers:
         - name: panel
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -30,19 +34,24 @@ spec:
                 name: {{ include "agent-panel.fullname" . }}-config
             - secretRef:
                 name: {{ include "agent-panel.fullname" . }}-secret
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
           volumeMounts:
             - name: panel-logs
               mountPath: /var/log/agent-panel
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: {{ .Values.service.managementPort }}
+              port: http
             initialDelaySeconds: 60
             periodSeconds: 15
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: {{ .Values.service.managementPort }}
+              port: http
             initialDelaySeconds: 30
             periodSeconds: 10
           resources:

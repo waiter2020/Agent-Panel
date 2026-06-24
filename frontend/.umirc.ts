@@ -57,6 +57,7 @@ export default defineConfig({
         { path: '/app/topology', name: '协同拓扑', component: './app/topology', access: 'canViewTopology' },
         { path: '/app/memory', name: '共享记忆', component: './app/memory', access: 'canViewMemory' },
         { path: '/app/detail/:id', name: '应用详情', hideInMenu: true, component: './app/detail', access: 'canAccessApp' },
+        { path: '/app/console/:id/:consoleKey', hideInMenu: true, layout: false, component: './app/console', access: 'canAccessApp' },
       ],
     },
     { path: '/files', name: '文件管理', icon: 'FolderOutlined', component: './files', access: 'canAccessFiles' },

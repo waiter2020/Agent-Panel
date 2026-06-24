@@ -41,7 +41,10 @@ public class AppHealthService {
                 : List.of();
         List<Map<String, Object>> consoleLinks = new ArrayList<>();
         for (Map<String, Object> console : consoles) {
-            String key = String.valueOf(console.get("key"));
+            String key = firstNonBlank(console.get("portRef"), console.get("key"));
+            if (key == null) {
+                continue;
+            }
             consoleLinks.add(Map.of(
                     "key", key,
                     "title", console.getOrDefault("title", key),
@@ -104,5 +107,18 @@ public class AppHealthService {
             }
         }
         throw new BusinessException("端口不存在: " + portRef);
+    }
+
+    private String firstNonBlank(Object... values) {
+        for (Object value : values) {
+            if (value == null) {
+                continue;
+            }
+            String text = String.valueOf(value);
+            if (!text.isBlank()) {
+                return text;
+            }
+        }
+        return null;
     }
 }

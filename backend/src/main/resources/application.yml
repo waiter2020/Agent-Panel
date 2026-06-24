@@ -75,11 +75,15 @@ agent:
   openclaw:
     user-header: ${OPENCLAW_PROXY_USER_HEADER:x-agentpanel-user}
     proxy-marker-header: ${OPENCLAW_PROXY_MARKER_HEADER:x-agentpanel-proxy}
-    trusted-proxies:
-      - 172.17.0.0/16
+    # Optional extra CIDRs; deploy-time discovery fills Docker/K8s proxy source networks automatically.
+    trusted-proxies: []
+    panel-public-origins:
+      - ${PANEL_PUBLIC_ORIGIN:http://localhost:8080}
+      - http://127.0.0.1:8080
+      - http://localhost
     k8s:
-      trusted-proxy-cidrs:
-        - 10.244.0.0/16
+      trusted-proxy-cidrs: []
+      auto-discover-node-pod-cidrs: true
 
 storage:
   type: s3

@@ -499,6 +499,7 @@ public class ApplicationService {
         applicationRepository.save(app);
         syncKanbanForApp(app);
         try {
+            openClawGatewayBootstrapService.bootstrapBeforeDeploy(app, null);
             DeploySpec spec = buildDeploySpec(app, null, null);
             AgentRuntimeProvider provider = runtimeProviderFactory.get(resolveProvider(app));
             DeployResult result = provider.deploy(spec);
@@ -524,9 +525,7 @@ public class ApplicationService {
             syncKanbanForApp(app);
             return toDto(app);
         } catch (Exception e) {
-            app.setStatus("error");
-            applicationRepository.save(app);
-            syncKanbanForApp(app);
+            markDeployFailed(app, e);
             throw e instanceof BusinessException ? (BusinessException) e
                     : new BusinessException("部署失败: " + e.getMessage());
         }
@@ -567,7 +566,12 @@ public class ApplicationService {
             return;
         }
         try {
-            RuntimeStatus status = runtimeProviderFactory.get(resolveProvider(app)).status(ref(app));
+            AgentRuntimeProvider provider = runtimeProviderFactory.get(resolveProvider(app));
+            RuntimeStatus status = provider.status(ref(app));
+            if (DockerRuntimeProvider.isContainerMissingStatus(status)) {
+                reconcileMissingRuntimeRef(app, provider);
+                return;
+            }
             String newStatus = mapRuntimePhase(status.phase());
             if (!newStatus.equals(app.getStatus())) {
                 app.setStatus(newStatus);
@@ -584,7 +588,11 @@ public class ApplicationService {
         if (app.getRuntimeRef() == null) {
             return new RuntimeStatus(RuntimeStatus.Phase.CREATED, false, "未部署");
         }
-        return runtimeProviderFactory.get(resolveProvider(app)).status(ref(app));
+        RuntimeStatus status = runtimeProviderFactory.get(resolveProvider(app)).status(ref(app));
+        if (DockerRuntimeProvider.isContainerMissingStatus(status)) {
+            return new RuntimeStatus(RuntimeStatus.Phase.MISSING, false, "容器不存在，请重新部署");
+        }
+        return status;
     }
 
     public ResourceStats getStats(Long id) {
@@ -693,7 +701,7 @@ public class ApplicationService {
         applicationRepository.save(app);
         syncKanbanForApp(app);
         try {
-            openClawGatewayBootstrapService.bootstrapBeforeDeploy(app);
+            openClawGatewayBootstrapService.bootstrapBeforeDeploy(app, network);
             DeploySpec spec = buildDeploySpec(app, network, null);
             AgentRuntimeProvider provider = runtimeProviderFactory.get(resolveProvider(app));
             DeployResult result = provider.deploy(spec);
@@ -719,12 +727,43 @@ public class ApplicationService {
             syncKanbanForApp(app);
             return toDto(app);
         } catch (Exception e) {
-            app.setStatus("error");
-            applicationRepository.save(app);
-            syncKanbanForApp(app);
+            markDeployFailed(app, e);
             throw e instanceof BusinessException ? (BusinessException) e
                     : new BusinessException("部署失败: " + e.getMessage());
         }
+    }
+
+    private void markDeployFailed(Application app, Exception e) {
+        app.setStatus("error");
+        app.setRuntimeRef(null);
+        app.setRuntimeNamespace(null);
+        applicationRepository.save(app);
+        syncKanbanForApp(app);
+        log.warn("应用 {} 部署失败，已清理 runtimeRef: {}", app.getId(), e.getMessage());
+    }
+
+    private void reconcileMissingRuntimeRef(Application app, AgentRuntimeProvider provider) {
+        if ("docker".equals(resolveProvider(app)) && provider instanceof DockerRuntimeProvider dockerProvider) {
+            Optional<String> found = dockerProvider.findContainerIdByName("app-" + app.getId());
+            if (found.isPresent()) {
+                log.info("应用 {} runtimeRef 已自愈重绑: {}", app.getId(), found.get());
+                app.setRuntimeRef(found.get());
+                applicationRepository.save(app);
+                RuntimeStatus status = provider.status(ref(app));
+                if (!DockerRuntimeProvider.isContainerMissingStatus(status)) {
+                    app.setStatus(mapRuntimePhase(status.phase()));
+                    applicationRepository.save(app);
+                    syncKanbanForApp(app);
+                }
+                return;
+            }
+        }
+        log.warn("应用 {} 容器不存在，清理陈旧 runtimeRef", app.getId());
+        app.setRuntimeRef(null);
+        app.setRuntimeNamespace(null);
+        app.setStatus("error");
+        applicationRepository.save(app);
+        syncKanbanForApp(app);
     }
 
     private String ensureTopologyInferenceKey(AgentTopology topology) {
@@ -875,7 +914,7 @@ public class ApplicationService {
             case RUNNING -> "running";
             case STOPPED -> "stopped";
             case CREATED -> "created";
-            case ERROR -> "error";
+            case ERROR, MISSING -> "error";
             case UNKNOWN -> "unknown";
         };
     }

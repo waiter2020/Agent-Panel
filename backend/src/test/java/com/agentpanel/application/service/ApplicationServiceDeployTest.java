@@ -3,6 +3,7 @@ package com.agentpanel.application.service;
 import com.agentpanel.application.entity.Application;
 import com.agentpanel.application.entity.AgentTemplate;
 import com.agentpanel.application.repository.*;
+import com.agentpanel.common.BusinessException;
 import com.agentpanel.common.CryptoService;
 import com.agentpanel.auth.ApiKeyManagementService;
 import com.agentpanel.config.AgentPanelProperties;
@@ -113,5 +114,42 @@ class ApplicationServiceDeployTest {
         assertFalse(dto.getAccessUrls().isEmpty());
         assertEquals("node1.local:31234", dto.getAccessUrls().get(0).get("url"));
         verify(deploymentRepository).save(any());
+    }
+
+    @Test
+    void deployFailureClearsRuntimeRef() {
+        app.setRuntimeRef("stale-container-id");
+        app.setRuntimeNamespace("agentpanel-apps");
+        when(applicationRepository.findByIdAndDeletedFalse(1L)).thenReturn(Optional.of(app));
+        when(templateRepository.findById(1L)).thenReturn(Optional.of(template));
+        when(appEnvRepository.findByApplicationId(1L)).thenReturn(List.of());
+        when(runtimeProviderFactory.get("k8s")).thenReturn(runtimeProvider);
+        when(runtimeProvider.deploy(any())).thenThrow(new BusinessException("镜像拉取失败"));
+        when(applicationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> applicationService.deploy(1L, mock(jakarta.servlet.http.HttpServletRequest.class)));
+
+        assertTrue(ex.getMessage().contains("镜像拉取失败"));
+        assertNull(app.getRuntimeRef());
+        assertNull(app.getRuntimeNamespace());
+        assertEquals("error", app.getStatus());
+        verify(deploymentRepository, never()).save(any());
+    }
+
+    @Test
+    void deployCallsOpenClawBootstrapBeforeProviderDeploy() {
+        when(applicationRepository.findByIdAndDeletedFalse(1L)).thenReturn(Optional.of(app));
+        when(templateRepository.findById(1L)).thenReturn(Optional.of(template));
+        when(appEnvRepository.findByApplicationId(1L)).thenReturn(List.of());
+        when(runtimeProviderFactory.get("k8s")).thenReturn(runtimeProvider);
+        when(runtimeProvider.deploy(any())).thenReturn(new DeployResult(
+                new RuntimeRef("k8s", "app-1", "agentpanel-apps"), "running", "ok", List.of()));
+        when(applicationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(objectMapper.convertValue(any(), eq(Map.class))).thenReturn(Map.of());
+
+        applicationService.deploy(1L, mock(jakarta.servlet.http.HttpServletRequest.class));
+
+        verify(openClawGatewayBootstrapService).bootstrapBeforeDeploy(app, null);
     }
 }

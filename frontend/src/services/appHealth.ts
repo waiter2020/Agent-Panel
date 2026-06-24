@@ -9,3 +9,7 @@ export async function getAppHealth(id: number) {
 export function getAppProxyUrl(appId: number, consoleKey: string) {
   return `/api/apps/${appId}/proxy/${consoleKey}/`;
 }
+
+export function getAppConsolePageUrl(appId: number, consoleKey: string) {
+  return `/app/console/${appId}/${encodeURIComponent(consoleKey)}`;
+}

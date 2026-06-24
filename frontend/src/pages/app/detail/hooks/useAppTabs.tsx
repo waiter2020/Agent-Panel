@@ -105,8 +105,15 @@ export function buildAppTabs(ctx: BuildTabsContext): TabsProps['items'] {
     if (!isKnownTabKey(tab.key)) {
       return;
     }
+    const consoleKey = tab.key === 'webConsole'
+      ? String(tab.portRef || tab.consoleKey || '')
+      : undefined;
+    if (tab.key === 'webConsole' && !consoleKey) {
+      return;
+    }
+
     const tabKey = tab.key === 'webConsole'
-      ? `webConsole:${tab.consoleKey || tab.portRef || index}`
+      ? `webConsole:${consoleKey}`
       : tab.key === 'typePanel'
         ? `typePanel:${tab.panelKey || ctx.app?.templateCode || index}`
         : tab.key;
@@ -151,8 +158,8 @@ export function buildAppTabs(ctx: BuildTabsContext): TabsProps['items'] {
         });
         break;
       case 'webConsole': {
-        const consoleKey = tab.consoleKey || tab.portRef;
-        const isOpenClawGateway = ctx.app?.templateCode === 'openclaw' && consoleKey === 'gateway';
+        const webConsoleKey = consoleKey!;
+        const isOpenClawGateway = ctx.app?.templateCode === 'openclaw' && webConsoleKey === 'gateway';
         const ConsolePanel = isOpenClawGateway ? OpenClawGatewayPanel : AppWebConsolePanel;
         items.push({
           key: tabKey,
@@ -160,10 +167,9 @@ export function buildAppTabs(ctx: BuildTabsContext): TabsProps['items'] {
           children: (
             <ConsolePanel
               appId={ctx.appId}
-              consoleKey={consoleKey}
+              consoleKey={webConsoleKey}
               title={tab.label}
               disabled={!ctx.app?.runtimeRef || ctx.app?.status !== 'running'}
-              accessUrls={ctx.app?.accessUrls || []}
             />
           ),
         });

@@ -4,6 +4,7 @@ import com.agentpanel.application.service.OpenClawGatewayBootstrapService;
 import com.agentpanel.common.BusinessException;
 import com.agentpanel.config.AgentRuntimeProperties;
 import com.agentpanel.runtime.api.*;
+import com.agentpanel.runtime.docker.DockerRuntimeProvider;
 import com.agentpanel.terminal.TerminalOutputHandler;
 import com.agentpanel.terminal.TerminalSession;
 import io.fabric8.kubernetes.api.model.*;
@@ -199,7 +200,8 @@ public class K8sRuntimeProvider implements AgentRuntimeProvider {
         try (KubernetesClient client = client()) {
             Deployment deployment = client.apps().deployments().inNamespace(ref.namespace()).withName(ref.ref()).get();
             if (deployment == null) {
-                return new RuntimeStatus(RuntimeStatus.Phase.ERROR, false, "Deployment 不存在");
+                return new RuntimeStatus(RuntimeStatus.Phase.MISSING, false,
+                        DockerRuntimeProvider.CONTAINER_MISSING_MARKER);
             }
             Integer ready = deployment.getStatus() != null ? deployment.getStatus().getReadyReplicas() : 0;
             Integer replicas = deployment.getSpec().getReplicas();
@@ -552,7 +554,8 @@ public class K8sRuntimeProvider implements AgentRuntimeProvider {
         if (!isOpenClaw(spec) || !allowUnconfigured) {
             return;
         }
-        containerBuilder.withCommand("node", "openclaw.mjs", "gateway", "--allow-unconfigured");
+        containerBuilder.withCommand("node", "openclaw.mjs", "gateway", "--allow-unconfigured",
+                "--bind", "lan", "--auth", "trusted-proxy");
     }
 
     private void applyOpenClawK8sBootstrap(KubernetesClient client, String namespace, DeploySpec spec, String name,

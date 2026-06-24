@@ -53,6 +53,28 @@ class AppHealthServiceTest {
     }
 
     @Test
+    void checkUsesPortRefAsConsoleProxyKey() {
+        Application app = new Application();
+        app.setId(1L);
+        app.setTemplateId(10L);
+        app.setStatus("stopped");
+
+        AgentTemplate template = new AgentTemplate();
+        template.setId(10L);
+        template.setManagementSchema(Map.of(
+                "webConsoles", List.of(Map.of("key", "ui", "portRef", "gateway", "title", "Gateway"))));
+
+        when(applicationService.requireApplication(1L)).thenReturn(app);
+        when(templateRepository.findById(10L)).thenReturn(Optional.of(template));
+        when(proxyService.buildProxyPath(1L, "gateway")).thenReturn("/api/apps/1/proxy/gateway/");
+
+        AppHealthDto dto = appHealthService.check(1L);
+
+        assertEquals("gateway", dto.getWebConsoles().getFirst().get("key"));
+        assertEquals("/api/apps/1/proxy/gateway/", dto.getWebConsoles().getFirst().get("proxyPath"));
+    }
+
+    @Test
     void checkReturnsHealthyWhenNoHealthCheckConfigured() {
         Application app = new Application();
         app.setId(1L);

@@ -12,6 +12,16 @@ function syncPlaygroundUrl(providerId?: number, model?: string) {
   history.replace(qs ? `/ai/playground?${qs}` : '/ai/playground');
 }
 
+async function readErrorMessage(res: Response) {
+  const text = await res.text();
+  try {
+    const body = JSON.parse(text);
+    return body?.message || body?.error || text || `请求失败 (${res.status})`;
+  } catch {
+    return text || `请求失败 (${res.status})`;
+  }
+}
+
 export default () => {
   const [searchParams] = useSearchParams();
   const [providers, setProviders] = useState<any[]>([]);
@@ -29,9 +39,10 @@ export default () => {
       const modelParam = searchParams.get('model');
       if (providerParam) {
         const matched = data.find((p: any) => String(p.id) === providerParam || p.code === providerParam);
-        if (matched) setProviderId(matched.id);
-      } else if (data[0]) {
-        setProviderId(data[0].id);
+        if (matched?.enabled !== false) setProviderId(matched.id);
+      } else {
+        const firstEnabled = data.find((p: any) => p.enabled !== false);
+        if (firstEnabled) setProviderId(firstEnabled.id);
       }
       if (modelParam) setModel(modelParam);
     });
@@ -46,23 +57,58 @@ export default () => {
     abortRef.current?.abort();
     abortRef.current = new AbortController();
     const token = localStorage.getItem('accessToken');
-    const res = await fetch('/api/ai/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ providerId, model, messages: nextMessages }),
-      signal: abortRef.current.signal,
-    });
-    const reader = res.body?.getReader();
-    const decoder = new TextDecoder();
-    let content = '';
-    while (reader) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      content += decoder.decode(value);
-      setStreaming(content);
+    try {
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ providerId, model, messages: nextMessages }),
+        signal: abortRef.current.signal,
+      });
+      if (!res.ok) {
+        throw new Error(await readErrorMessage(res));
+      }
+      const reader = res.body?.getReader();
+      if (!reader) {
+        throw new Error('响应流不可用');
+      }
+      const decoder = new TextDecoder();
+      const isSse = (res.headers.get('content-type') || '').includes('text/event-stream');
+      let content = '';
+      let pending = '';
+      const append = (text: string) => {
+        content += text;
+        setStreaming(content);
+      };
+      const consumeSse = (chunk: string, done = false) => {
+        pending += chunk;
+        const lines = pending.split(/\r?\n/);
+        pending = done ? '' : lines.pop() || '';
+        lines.forEach((line) => {
+          if (!line.startsWith('data:')) return;
+          const data = line.slice(5).trimStart();
+          if (data && data !== '[DONE]') append(data);
+        });
+      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        if (isSse) consumeSse(chunk);
+        else append(chunk);
+      }
+      const tail = decoder.decode();
+      if (isSse) consumeSse(tail, true);
+      else if (tail) append(tail);
+      setMessages([...nextMessages, { role: 'assistant', content }]);
+      setStreaming('');
+    } catch (e: any) {
+      if (e?.name === 'AbortError') return;
+      message.error(e?.message || '对话请求失败');
+      setStreaming('');
     }
-    setMessages([...nextMessages, { role: 'assistant', content }]);
-    setStreaming('');
   };
 
   return (
@@ -80,7 +126,11 @@ export default () => {
               setProviderId(v);
               syncPlaygroundUrl(v, model);
             }}
-            options={providers.map((p) => ({ label: p.name, value: p.id }))}
+            options={providers.map((p) => ({
+              label: p.enabled === false ? `${p.name}（已禁用）` : p.name,
+              value: p.id,
+              disabled: p.enabled === false,
+            }))}
           />
           <Input
             style={{ width: 200 }}

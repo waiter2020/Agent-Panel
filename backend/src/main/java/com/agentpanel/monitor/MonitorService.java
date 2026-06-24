@@ -10,10 +10,14 @@ import com.agentpanel.runtime.api.ResourceStats;
 import com.agentpanel.runtime.api.RuntimeRef;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
+import java.util.function.Supplier;
 
 @Slf4j
 @Service
@@ -26,12 +30,27 @@ public class MonitorService {
     private final StatsRateTracker statsRateTracker;
 
     public Flux<ResourceStats> statsStream(Long appId) {
-        return Flux.interval(Duration.ofSeconds(5))
-                .map(tick -> statsRateTracker.enrich(appId, safeGetStats(appId)))
+        applicationService.requireApplication(appId);
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return Flux.interval(Duration.ZERO, Duration.ofSeconds(5))
+                .map(tick -> withSecurityContext(authentication,
+                        () -> statsRateTracker.enrich(appId, safeGetStats(appId))))
                 .onErrorResume(e -> {
                     log.warn("应用 {} 监控流异常: {}", appId, e.getMessage());
                     return Flux.just(ResourceStats.unavailable("监控流异常: " + e.getMessage()));
                 });
+    }
+
+    private static <T> T withSecurityContext(Authentication authentication, Supplier<T> action) {
+        SecurityContext previous = SecurityContextHolder.getContext();
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(authentication);
+        SecurityContextHolder.setContext(context);
+        try {
+            return action.get();
+        } finally {
+            SecurityContextHolder.setContext(previous);
+        }
     }
 
     private ResourceStats safeGetStats(Long appId) {
